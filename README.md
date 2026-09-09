@@ -2,9 +2,9 @@
 
 Yuristim — O‘zbekiston fuqarolari va bizneslari uchun yuridik yordam, huquqiy
 hujjatlar va professional yuristlarni yagona platformada birlashtiruvchi LegalTech
-ekotizimi. Repository Phase 2 doirasida database va Telegram-rooted core auth
-foundationini o‘z ichiga oladi; marketplace, payment, AI va lawyer verification
-keyingi fazalarga qoldirilgan.
+ekotizimi. Repository Phase 3 doirasida database/core auth foundationi hamda
+multilingual Telegram Bot onboarding va navigatsiyasini o‘z ichiga oladi;
+marketplace, payment, AI va lawyer verification keyingi fazalarga qoldirilgan.
 
 ## Arxitektura
 
@@ -20,7 +20,7 @@ Future Admin ───┘
 Core auth Telegram identity, bir martalik login challenge, Argon2id PIN va
 server-controlled sessionlardan foydalanadi. Batafsil:
 [architecture](docs/architecture.md), [authentication](docs/authentication.md) va
-[database](docs/database.md).
+[database](docs/database.md). Bot tafsilotlari: [telegram-bot](docs/telegram-bot.md).
 
 ## Monorepo strukturasi
 
@@ -53,7 +53,7 @@ server-controlled sessionlardan foydalanadi. Batafsil:
 ```bash
 git clone https://github.com/diyorbeknematov28042007-dotcom/Yuristim09092026.git
 cd Yuristim09092026
-git checkout phase/02-database-core-auth
+git checkout phase/03-telegram-bot-core
 corepack enable
 pnpm install --frozen-lockfile
 ```
@@ -66,7 +66,9 @@ cp .env.example .env
 
 API uchun `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET` va `INTERNAL_BOT_API_SECRET`
-majburiy. Bot API bilan bir xil `INTERNAL_BOT_API_SECRET` ishlatadi. Secretlar
+majburiy. Bot API bilan bir xil `INTERNAL_BOT_API_SECRET` ishlatadi.
+`PUBLIC_OFFER_URL`, `PRIVACY_URL` va `SUPPORT_USERNAME` faqat real qiymat mavjud
+bo‘lganda beriladi; bo‘sh qiymat uchun Bot uydirma link ko‘rsatmaydi. Secretlar
 faqat local/hosting environmentida saqlanadi; `NEXT_PUBLIC_*`dan boshqa qiymat
 browser bundle'ga kiritilmaydi.
 
@@ -109,8 +111,9 @@ supabase test db
 - **Web:** responsive Next.js skeleton; API-first client.
 - **API:** health/readiness, Core User API, Telegram auth challenge, PIN,
   HttpOnly session va HMAC-protected Bot endpointlari.
-- **Bot:** grammY transport; Telegram identity'ni imzolangan internal API
-  so‘rovlari orqali uzatadi va database'ga bevosita kirmaydi.
+- **Bot:** grammY transport; `/start`, persistent onboarding, uch tilli RK/IK,
+  settings/profile va feature shell navigatsiyasi. Telegram identity va barcha
+  business state imzolangan internal API orqali yuradi; database'ga bevosita kirmaydi.
 
 ## Deployment
 
