@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+.turbo/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local platform state
+.vercel/
+.railway/
+
+# Logs
+*.log
+pnpm-debug.log*
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/

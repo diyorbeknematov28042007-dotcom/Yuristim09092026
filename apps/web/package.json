@@ -1,0 +1,25 @@
+{
+  "name": "@yuristim/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "node --env-file-if-exists=../../.env node_modules/next/dist/bin/next dev",
+    "lint": "eslint src next.config.ts",
+    "start": "node --env-file-if-exists=../../.env node_modules/next/dist/bin/next start",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@yuristim/config": "workspace:*",
+    "@yuristim/ui": "workspace:*",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7"
+  }
+}
