@@ -8,7 +8,7 @@
     "lint": "eslint src next.config.ts",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run src --passWithNoTests"
   },
   "dependencies": {
     "@next/env": "16.3.4",

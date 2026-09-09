@@ -7,6 +7,7 @@ async function start(): Promise<void> {
     const env = loadBotEnv();
     const bot = createBot({
       apiBaseUrl: env.API_BASE_URL,
+      internalApiSecret: env.INTERNAL_BOT_API_SECRET,
       token: env.TELEGRAM_BOT_TOKEN,
     });
 

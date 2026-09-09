@@ -9,12 +9,13 @@ export interface YuristimBotContext extends Context {
 
 export interface CreateBotOptions {
   apiBaseUrl: string;
+  internalApiSecret: string;
   token: string;
 }
 
 export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
   const bot = new Bot<YuristimBotContext>(options.token);
-  const api = new YuristimApiClient(options.apiBaseUrl);
+  const api = new YuristimApiClient(options.apiBaseUrl, options.internalApiSecret);
 
   bot.use(apiContext(api));
   registerDevelopmentHandlers(bot);
