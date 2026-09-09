@@ -1,10 +1,15 @@
 import type { BotOnboardingAction, BotUserContext, UserView } from '@yuristim/types';
 import type { Update, UserFromGetMe } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
-import type { EnsureUserResult, YuristimApi } from './api/yuristim-api.client.js';
+import {
+  YuristimApiError,
+  type EnsureUserResult,
+  type YuristimApi,
+} from './api/yuristim-api.client.js';
 import { createBot } from './bot.js';
 import { t } from './i18n/index.js';
 import { mainLawyerKeyboard } from './keyboards/main-lawyer.keyboard.js';
+import { displayName } from './services/user-context.service.js';
 
 const botInfo = {
   can_join_groups: true,
@@ -226,6 +231,15 @@ describe('/start', () => {
     await blocked.bot.handleUpdate(startUpdate(2), botInfo);
     expect(texts(blocked.calls)).toContain(t(null, 'blocked'));
   });
+
+  it('continues unfinished onboarding from persisted backend state', async () => {
+    const api = new FakeApi();
+    api.created = false;
+    api.data.user = user({ language: 'en', onboardingStatus: 'role_selection' });
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('onboarding:continue', 3), botInfo);
+    expect(texts(calls)).toContain(t('en', 'chooseRole'));
+  });
 });
 
 describe('onboarding', () => {
@@ -328,5 +342,35 @@ describe('menus and callback security', () => {
     const payload = JSON.stringify(calls.find((call) => call.method === 'sendMessage')?.payload);
     expect(payload).not.toContain(t('uz', 'marketplace'));
     expect(payload).toContain(t('uz', 'questions'));
+  });
+
+  it('returns to the main menu through validated back navigation', async () => {
+    const api = new FakeApi();
+    api.data.user = user({ language: 'uz', onboardingRole: 'user', onboardingStatus: 'completed' });
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('nav:main', 90), botInfo);
+    expect(texts(calls)).toContain(t('uz', 'mainTitle'));
+  });
+
+  it('uses username then first name as non-identity display fallbacks', () => {
+    expect(displayName(user({ fullName: null, telegramUsername: 'diyorbek' }))).toBe('@diyorbek');
+    expect(
+      displayName(user({ fullName: null, telegramFirstName: 'Diyorbek', telegramUsername: null })),
+    ).toBe('Diyorbek');
+  });
+
+  it('maps API failure to safe localized UX without exposing technical detail', async () => {
+    const api = new FakeApi();
+    api.getTelegramUserContext = () => Promise.reject(new YuristimApiError('API_UNAVAILABLE', 503));
+    const errorLog = console.error;
+    console.error = () => undefined;
+    try {
+      const { bot, calls } = fixture(api);
+      await bot.handleUpdate(textUpdate('hello', 100), botInfo);
+      expect(texts(calls)).toContain(t('uz', 'apiError'));
+      expect(texts(calls).join(' ')).not.toContain('API_UNAVAILABLE');
+    } finally {
+      console.error = errorLog;
+    }
   });
 });
