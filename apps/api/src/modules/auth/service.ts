@@ -10,6 +10,8 @@ import {
   type UserRow,
 } from '@yuristim/db';
 import type {
+  BotOnboardingAction,
+  BotUserContext,
   Language,
   OnboardingStatus,
   UserMode,
@@ -271,7 +273,9 @@ export class CoreAuthService {
   }
 
   async acceptTerms(userId: string, version: string): Promise<UserRow> {
+    const user = await this.requireUser(userId);
     return this.repository.updateUser(userId, {
+      onboarding_status: this.completedStatus(user),
       terms_accepted_at: this.now().toISOString(),
       terms_version: version,
     });
@@ -285,8 +289,89 @@ export class CoreAuthService {
     return this.repository.updateUser(userId, {
       active_mode: 'user',
       onboarding_role: role,
-      onboarding_status: 'active',
+      onboarding_status: user.terms_accepted_at ? 'completed' : 'terms_acceptance',
     });
+  }
+
+  async getTelegramUserContext(telegramUserId: number): Promise<BotUserContext> {
+    const user = await this.repository.findUserByTelegramId(telegramUserId);
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+    this.assertUserActive(user);
+    return { hasPin: user.pin_hash !== null, user: this.toUserView(user) };
+  }
+
+  async updateTelegramOnboarding(
+    telegramUserId: number,
+    action: BotOnboardingAction,
+  ): Promise<BotUserContext> {
+    const user = await this.repository.findUserByTelegramId(telegramUserId);
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+    this.assertUserActive(user);
+
+    let updated: UserRow;
+    switch (action.action) {
+      case 'set_language':
+        updated = await this.repository.updateUser(user.id, {
+          language: action.language,
+          onboarding_status:
+            user.onboarding_status === 'completed'
+              ? 'completed'
+              : user.onboarding_role === null
+                ? 'role_selection'
+                : this.nextOnboardingStatus(user),
+        });
+        break;
+      case 'set_role': {
+        const nextUser = { ...user, onboarding_role: action.role };
+        updated = await this.repository.updateUser(user.id, {
+          active_mode: 'user',
+          onboarding_role: action.role,
+          onboarding_status: this.nextOnboardingStatus(nextUser),
+        });
+        break;
+      }
+      case 'set_full_name': {
+        if (user.onboarding_role !== 'lawyer') {
+          throw new AppError(400, 'VALIDATION_ERROR', 'Full name is not required for this role');
+        }
+        const fullName = action.fullName.trim();
+        updated = await this.repository.updateUser(user.id, {
+          full_name: fullName,
+          onboarding_status: user.terms_accepted_at ? 'completed' : 'terms_acceptance',
+        });
+        break;
+      }
+      case 'accept_terms':
+        if (
+          user.language === null ||
+          user.onboarding_role === null ||
+          (user.onboarding_role === 'lawyer' && user.full_name === null)
+        ) {
+          throw new AppError(409, 'VALIDATION_ERROR', 'Onboarding profile is incomplete');
+        }
+        if (user.onboarding_status === 'completed' && user.terms_accepted_at !== null) {
+          return { hasPin: user.pin_hash !== null, user: this.toUserView(user) };
+        }
+        updated = await this.repository.updateUser(user.id, {
+          onboarding_status: 'completed',
+          terms_accepted_at: this.now().toISOString(),
+          terms_version: action.termsVersion,
+        });
+        break;
+      case 'reset':
+        updated = await this.repository.updateUser(user.id, {
+          active_mode: 'user',
+          full_name: null,
+          language: null,
+          onboarding_role: null,
+          onboarding_status: 'language_selection',
+          terms_accepted_at: null,
+          terms_version: null,
+        });
+        break;
+    }
+
+    return { hasPin: updated.pin_hash !== null, user: this.toUserView(updated) };
   }
 
   async switchMode(userId: string, mode: UserMode): Promise<UserRow> {
@@ -344,6 +429,24 @@ export class CoreAuthService {
     const user = await this.repository.findUserById(id);
     if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
     return user;
+  }
+
+  private completedStatus(user: UserRow): OnboardingStatus {
+    return user.language &&
+      user.onboarding_role &&
+      (user.onboarding_role !== 'lawyer' || user.full_name)
+      ? 'completed'
+      : user.onboarding_status === 'name_required'
+        ? 'name_required'
+        : 'terms_acceptance';
+  }
+
+  private nextOnboardingStatus(user: UserRow): OnboardingStatus {
+    if (user.language === null) return 'language_selection';
+    if (user.onboarding_role === null) return 'role_selection';
+    if (user.onboarding_role === 'lawyer' && user.full_name === null) return 'name_required';
+    if (user.terms_accepted_at === null) return 'terms_acceptance';
+    return 'completed';
   }
 
   private assertUserActive(user: UserRow): void {

@@ -220,7 +220,111 @@ describe('core auth and user API', () => {
     expect(language.json()).toMatchObject({ user: { language: 'uz' } });
     expect(terms.json()).toMatchObject({ user: { termsVersion: '2026-09' } });
     expect(role.json()).toMatchObject({
-      user: { activeMode: 'user', onboardingRole: 'user', onboardingStatus: 'active' },
+      user: { activeMode: 'user', onboardingRole: 'user', onboardingStatus: 'completed' },
+    });
+  });
+
+  it('persists allowlisted Bot onboarding actions and preserves account identity on reset', async () => {
+    await app.inject({
+      headers: internalHeaders(identity),
+      method: 'POST',
+      payload: identity,
+      url: '/internal/telegram/users/ensure',
+    });
+    const original = [...repository.users.values()][0]!;
+    const context = await app.inject({
+      headers: internalHeaders(undefined),
+      method: 'GET',
+      url: `/internal/telegram/users/${identity.telegramUserId}/context`,
+    });
+    expect(context.statusCode).toBe(200);
+    expect(context.json()).toMatchObject({ hasPin: false, user: { duid: original.duid } });
+
+    for (const action of [
+      { action: 'set_language', language: 'ru' },
+      { action: 'set_role', role: 'user' },
+      { action: 'accept_terms', termsVersion: '2026-09' },
+    ]) {
+      const response = await app.inject({
+        headers: internalHeaders(action),
+        method: 'PATCH',
+        payload: action,
+        url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    expect(repository.users.get(original.id)).toMatchObject({
+      language: 'ru',
+      onboarding_role: 'user',
+      onboarding_status: 'completed',
+      terms_version: '2026-09',
+    });
+    const acceptedAt = repository.users.get(original.id)?.terms_accepted_at;
+    const duplicateTerms = { action: 'accept_terms', termsVersion: '2026-09' };
+    await app.inject({
+      headers: internalHeaders(duplicateTerms),
+      method: 'PATCH',
+      payload: duplicateTerms,
+      url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+    });
+    expect(repository.users.get(original.id)?.terms_accepted_at).toBe(acceptedAt);
+
+    const unsafe = { action: 'reset', duid: 'yr_AAAAAAAAAAAAAAAA' };
+    const rejected = await app.inject({
+      headers: internalHeaders(unsafe),
+      method: 'PATCH',
+      payload: unsafe,
+      url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+    });
+    expect(rejected.statusCode).toBe(400);
+
+    const resetAction = { action: 'reset' };
+    const reset = await app.inject({
+      headers: internalHeaders(resetAction),
+      method: 'PATCH',
+      payload: resetAction,
+      url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+    });
+    expect(reset.json()).toMatchObject({
+      user: {
+        duid: original.duid,
+        id: original.id,
+        language: null,
+        onboardingStatus: 'language_selection',
+        telegramUserId: String(identity.telegramUserId),
+      },
+    });
+    expect(repository.users).toHaveLength(1);
+  });
+
+  it('accepts a lawyer intention before name and keeps active mode as user', async () => {
+    await app.inject({
+      headers: internalHeaders(identity),
+      method: 'POST',
+      payload: identity,
+      url: '/internal/telegram/users/ensure',
+    });
+    const url = `/internal/telegram/users/${identity.telegramUserId}/onboarding`;
+    const language = { action: 'set_language', language: 'uz' };
+    await app.inject({
+      headers: internalHeaders(language),
+      method: 'PATCH',
+      payload: language,
+      url,
+    });
+    const role = { action: 'set_role', role: 'lawyer' };
+    const response = await app.inject({
+      headers: internalHeaders(role),
+      method: 'PATCH',
+      payload: role,
+      url,
+    });
+    expect(response.json()).toMatchObject({
+      user: {
+        activeMode: 'user',
+        onboardingRole: 'lawyer',
+        onboardingStatus: 'name_required',
+      },
     });
   });
 
