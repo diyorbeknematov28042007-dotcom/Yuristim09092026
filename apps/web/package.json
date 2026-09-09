@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "node --env-file-if-exists=../../.env node_modules/next/dist/bin/next dev",
+    "dev": "next dev",
     "lint": "eslint src next.config.ts",
-    "start": "node --env-file-if-exists=../../.env node_modules/next/dist/bin/next start",
+    "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@next/env": "16.3.4",
     "@yuristim/config": "workspace:*",
     "@yuristim/ui": "workspace:*",
     "next": "16.3.4",
