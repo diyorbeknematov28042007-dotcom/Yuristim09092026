@@ -45,3 +45,15 @@ o‘zgartira oladi. Lawyer role niyati uchun F.I.Sh. talab qilinadi; lawyer mode
 Internal so‘rovlar body va Unix timestamp ustidan HMAC-SHA-256 bilan imzolanadi.
 API besh daqiqalik vaqt oynasini, constant-time signature comparisonni va strict
 request schemani tekshiradi. Shared secret hech qachon response yoki logga kirmaydi.
+
+Phase 3 Bot quyidagi contractlardan foydalanadi:
+
+- `POST /internal/telegram/users/ensure` — Telegram identity bo‘yicha idempotent ensure;
+- `GET /internal/telegram/users/:telegramUserId/context` — safe profile va onboarding state;
+- `PATCH /internal/telegram/users/:telegramUserId/onboarding` — faqat discriminated,
+  allowlist qilingan onboarding actionlari;
+- `POST /internal/telegram/auth/confirm` — Web/Mini App login challenge confirmation.
+
+Onboarding endpoint DUID, Telegram ID, account status, PIN yoki `active_mode=lawyer`
+qiymatini qabul qilmaydi. Reset faqat onboarding progressni tozalaydi va account
+identity/DUIDni saqlaydi.

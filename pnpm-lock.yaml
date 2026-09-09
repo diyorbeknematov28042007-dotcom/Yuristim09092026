@@ -72,6 +72,9 @@ importers:
       '@yuristim/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@yuristim/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       grammy:
         specifier: 1.46.0
         version: 1.46.0(supports-color@7.2.0)

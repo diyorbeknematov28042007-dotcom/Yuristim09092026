@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(14);
 
 select has_table('public', 'users', 'users table exists');
 select has_table('public', 'auth_sessions', 'auth_sessions table exists');
@@ -16,6 +16,19 @@ select col_is_unique(
   'auth_login_requests',
   'challenge_hash',
   'login challenge hash is unique'
+);
+
+select has_check(
+  'public',
+  'users',
+  'users_onboarding_status_check',
+  'onboarding state values are constrained'
+);
+select has_check(
+  'public',
+  'users',
+  'completed_onboarding_is_valid',
+  'completed onboarding requires its persisted fields'
 );
 
 select policies_are(

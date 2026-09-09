@@ -16,7 +16,8 @@ export const USER_MODES = ['user', 'lawyer'] as const;
 export type UserMode = (typeof USER_MODES)[number];
 
 export type UserStatus = 'active' | 'blocked';
-export type OnboardingStatus = 'language_selection' | 'role_selection' | 'name_required' | 'active';
+export type OnboardingStatus =
+  'language_selection' | 'role_selection' | 'name_required' | 'terms_acceptance' | 'completed';
 
 export interface UserView {
   id: string;
@@ -35,6 +36,18 @@ export interface UserView {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface BotUserContext {
+  hasPin: boolean;
+  user: UserView;
+}
+
+export type BotOnboardingAction =
+  | { action: 'set_language'; language: Language }
+  | { action: 'set_role'; role: UserRole }
+  | { action: 'set_full_name'; fullName: string }
+  | { action: 'accept_terms'; termsVersion: string }
+  | { action: 'reset' };
 
 export interface UserTagView {
   id: string;
