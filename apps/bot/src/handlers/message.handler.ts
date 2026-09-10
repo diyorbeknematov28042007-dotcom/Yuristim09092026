@@ -7,6 +7,7 @@ import { settingsKeyboard } from '../keyboards/settings.keyboard.js';
 import { showMainMenu, showOnboardingStep } from '../services/navigation.service.js';
 import { showVerificationStep } from '../services/lawyer-verification.service.js';
 import { validFullName } from '../services/user-context.service.js';
+import { showBalance } from '../services/credit.service.js';
 
 export function registerMessageHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('message:text', async (context) => {
@@ -124,7 +125,7 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
     if (message === t(language, 'balance')) {
-      await context.reply(t(language, 'balanceLater'));
+      await showBalance(context, language);
       return;
     }
     if (message === t(language, 'marketplace')) {
