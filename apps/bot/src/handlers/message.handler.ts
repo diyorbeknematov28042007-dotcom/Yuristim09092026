@@ -99,6 +99,14 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       });
       return;
     }
+    if (message === t(language, 'findLawyer') && data.user.activeMode === 'user') {
+      await context.reply(t(language, 'findLawyerLater'));
+      return;
+    }
+    if (message === t(language, 'findClients') && data.user.activeMode === 'lawyer') {
+      await context.reply(t(language, 'findClientsLater'));
+      return;
+    }
     if (message === t(language, 'settings')) {
       await context.reply(t(language, 'settingsTitle'), {
         reply_markup: settingsKeyboard(language),

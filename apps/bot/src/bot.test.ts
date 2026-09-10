@@ -17,6 +17,8 @@ import {
 import { createBot } from './bot.js';
 import { t } from './i18n/index.js';
 import { mainLawyerKeyboard } from './keyboards/main-lawyer.keyboard.js';
+import { mainUserKeyboard } from './keyboards/main-user.keyboard.js';
+import { servicesKeyboard } from './keyboards/services.keyboard.js';
 import { displayName } from './services/user-context.service.js';
 
 const botInfo = {
@@ -357,6 +359,20 @@ function texts(calls: TelegramCall[]): string[] {
     .map((call) => String(call.payload.text));
 }
 
+function replyKeyboardLabels(keyboard: unknown): string[] {
+  const markup = JSON.parse(JSON.stringify(keyboard)) as {
+    keyboard: Array<Array<{ text: string }>>;
+  };
+  return markup.keyboard.flat().map((button) => button.text);
+}
+
+function inlineKeyboardLabels(keyboard: unknown): string[] {
+  const markup = JSON.parse(JSON.stringify(keyboard)) as {
+    inline_keyboard: Array<Array<{ text: string }>>;
+  };
+  return markup.inline_keyboard.flat().map((button) => button.text);
+}
+
 describe('/start', () => {
   it('starts a new user at language selection', async () => {
     const { api, bot, calls } = fixture();
@@ -445,22 +461,73 @@ describe('onboarding', () => {
 });
 
 describe('menus and callback security', () => {
+  it.each(['uz', 'ru', 'en'] as const)(
+    'keeps the relocated main actions and service menu consistent in %s',
+    (language) => {
+      const userLabels = replyKeyboardLabels(mainUserKeyboard(language));
+      expect(userLabels).toHaveLength(6);
+      expect(userLabels).toEqual([
+        t(language, 'ai'),
+        t(language, 'findLawyer'),
+        t(language, 'services'),
+        t(language, 'balance'),
+        t(language, 'settings'),
+        t(language, 'questions'),
+      ]);
+
+      const serviceLabels = inlineKeyboardLabels(servicesKeyboard(language));
+      expect(serviceLabels).not.toContain(t(language, 'findLawyer'));
+      expect(serviceLabels).toEqual([
+        t(language, 'documentSamples'),
+        t(language, 'legalLibrary'),
+        t(language, 'createDocument'),
+        t(language, 'back'),
+      ]);
+
+      const lawyerLabels = replyKeyboardLabels(mainLawyerKeyboard(language));
+      expect(lawyerLabels).toHaveLength(6);
+      expect(lawyerLabels).toEqual([
+        t(language, 'ai'),
+        t(language, 'findClients'),
+        t(language, 'services'),
+        t(language, 'marketplace'),
+        t(language, 'balance'),
+        t(language, 'settings'),
+      ]);
+    },
+  );
+
   it('renders navigation and clean feature shells', async () => {
     const api = new FakeApi();
     api.data.user = user({ language: 'en', onboardingRole: 'user', onboardingStatus: 'completed' });
     const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate(t('en', 'findLawyer'), 49), botInfo);
     await bot.handleUpdate(textUpdate(t('en', 'services'), 50), botInfo);
     await bot.handleUpdate(callbackUpdate('service:create-document', 51), botInfo);
     await bot.handleUpdate(textUpdate(t('en', 'settings'), 52), botInfo);
     await bot.handleUpdate(textUpdate(t('en', 'questions'), 53), botInfo);
     expect(texts(calls)).toEqual(
       expect.arrayContaining([
+        t('en', 'findLawyerLater'),
         t('en', 'servicesTitle'),
         t('en', 'documentLater'),
         t('en', 'settingsTitle'),
         t('en', 'questionsTitle'),
       ]),
     );
+  });
+
+  it('renders the localized client-discovery shell in lawyer mode', async () => {
+    const api = new FakeApi();
+    api.data.user = user({
+      activeMode: 'lawyer',
+      language: 'ru',
+      onboardingRole: 'lawyer',
+      onboardingStatus: 'completed',
+    });
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate(t('ru', 'findClients'), 54), botInfo);
+    expect(texts(calls)).toContain(t('ru', 'findClientsLater'));
   });
 
   it('rejects malformed callbacks and defines the lawyer menu renderer', async () => {

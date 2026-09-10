@@ -24,6 +24,10 @@ export const en = {
   marketplace: '📢 Marketplace',
   servicesTitle: 'Choose a service:',
   findLawyer: '⚖️ Find a lawyer',
+  findClients: '👥 Find clients',
+  findLawyerLater: 'Lawyer discovery in Telegram will launch in a later phase.',
+  findClientsLater:
+    'Client and listing discovery will be fully connected to Marketplace in Phase 6.',
   documentSamples: '📄 Document samples',
   legalLibrary: '📚 Legal literature',
   createDocument: '✍️ Create a document',
