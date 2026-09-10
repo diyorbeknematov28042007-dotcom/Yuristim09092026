@@ -19,6 +19,14 @@ import {
   showVerificationStep,
 } from '../services/lawyer-verification.service.js';
 import { parseCallbackData } from '../types/callback.js';
+import {
+  showAcceptBalance,
+  showBalance,
+  showCreditHistory,
+  showCreditProducts,
+} from '../services/credit.service.js';
+import { balanceBackKeyboard } from '../keyboards/balance.keyboard.js';
+import { YuristimApiError } from '../api/yuristim-api.client.js';
 
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('callback_query:data', async (context) => {
@@ -120,7 +128,33 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       return;
     }
     if (callback === 'nav:balance') {
-      await editOrReply(context, t(language, 'balanceLater'));
+      await showBalance(context, language);
+      return;
+    }
+    if (callback === 'credits:buy') {
+      await showCreditProducts(context, language);
+      return;
+    }
+    if (callback === 'credits:history') {
+      await showCreditHistory(context, language);
+      return;
+    }
+    if (callback === 'credits:accepts') {
+      try {
+        await showAcceptBalance(context, language);
+      } catch (error) {
+        if (!(error instanceof YuristimApiError) || error.code !== 'LAWYER_NOT_VERIFIED')
+          throw error;
+        await editOrReply(context, t(language, 'acceptsLawyerOnly'), {
+          reply_markup: balanceBackKeyboard(language),
+        });
+      }
+      return;
+    }
+    if (callback === 'credits:all-plans') {
+      await editOrReply(context, t(language, 'plansUnavailable'), {
+        reply_markup: balanceBackKeyboard(language),
+      });
       return;
     }
 

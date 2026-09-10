@@ -8,6 +8,11 @@ import {
   type BotOnboardingAction,
   type BotUserContext,
   type BotVerificationAction,
+  type CreditBalanceView,
+  type CreditProductView,
+  type CreditTransactionPage,
+  type MarketplaceAcceptBalanceView,
+  type MarketplaceAcceptProductView,
   type UserView,
 } from '@yuristim/types';
 import { z } from 'zod';
@@ -42,6 +47,11 @@ export interface YuristimApi {
     },
   ): Promise<{ path: string }>;
   switchMode(telegramUserId: number, mode: 'user' | 'lawyer'): Promise<UserView>;
+  getCreditBalance(telegramUserId: number): Promise<CreditBalanceView>;
+  getCreditHistory(telegramUserId: number): Promise<CreditTransactionPage>;
+  getCreditProducts(telegramUserId: number): Promise<CreditProductView[]>;
+  getAcceptBalance(telegramUserId: number): Promise<MarketplaceAcceptBalanceView>;
+  getAcceptProducts(telegramUserId: number): Promise<MarketplaceAcceptProductView[]>;
 }
 
 export class YuristimApiError extends Error {
@@ -148,6 +158,63 @@ const lawyerContextSchema = z.object({
 });
 const verificationResponseSchema = z.object({ verification: verificationSchema.nullable() });
 const pathSchema = z.object({ path: z.string() });
+const creditBalanceSchema = z.object({
+  bonus: z.number(),
+  lowBalance: z.boolean(),
+  nextExpiry: z.string().nullable(),
+  paid: z.number(),
+  total: z.number(),
+  weekly: z.number(),
+  zeroBalance: z.boolean(),
+});
+const creditTransactionSchema = z.object({
+  amount: z.number(),
+  balanceAfter: z.number(),
+  bucketType: z.enum(['paid', 'weekly', 'bonus']),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable(),
+  id: z.string(),
+  reason: z.string().nullable(),
+  type: z.enum([
+    'purchase',
+    'welcome_bonus',
+    'weekly_bonus',
+    'student_bonus',
+    'admin_bonus',
+    'ai_usage',
+    'document_usage',
+    'refund',
+    'adjustment',
+    'reversal',
+  ]),
+});
+const creditHistorySchema = z.object({
+  items: z.array(creditTransactionSchema),
+  limit: z.number(),
+  page: z.number(),
+  total: z.number(),
+});
+const creditProductSchema = z.object({
+  code: z.string(),
+  creditAmount: z.number(),
+  currency: z.literal('UZS'),
+  id: z.string(),
+  name: z.string(),
+  price: z.number(),
+});
+const acceptBalanceSchema = z.object({
+  balance: z.number(),
+  nextExpiry: z.string().nullable(),
+});
+const acceptProductSchema = z.object({
+  acceptCount: z.number(),
+  code: z.string(),
+  currency: z.literal('UZS'),
+  expiresInDays: z.number().nullable(),
+  id: z.string(),
+  name: z.string(),
+  price: z.number(),
+});
 
 interface ClientOptions {
   baseUrl: string;
@@ -246,6 +313,46 @@ export class YuristimApiClient implements YuristimApi {
       mode,
     });
     return this.parse(z.object({ user: userSchema }), payload).user;
+  }
+
+  async getCreditBalance(telegramUserId: number): Promise<CreditBalanceView> {
+    return this.parse(
+      creditBalanceSchema,
+      await this.request('GET', `/internal/telegram/users/${telegramUserId}/credits/balance`),
+    );
+  }
+
+  async getCreditHistory(telegramUserId: number): Promise<CreditTransactionPage> {
+    return this.parse(
+      creditHistorySchema,
+      await this.request('GET', `/internal/telegram/users/${telegramUserId}/credits/transactions`),
+    );
+  }
+
+  async getCreditProducts(telegramUserId: number): Promise<CreditProductView[]> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/credits/products`,
+    );
+    return this.parse(z.object({ items: z.array(creditProductSchema) }), payload).items;
+  }
+
+  async getAcceptBalance(telegramUserId: number): Promise<MarketplaceAcceptBalanceView> {
+    return this.parse(
+      acceptBalanceSchema,
+      await this.request(
+        'GET',
+        `/internal/telegram/users/${telegramUserId}/marketplace/accept-balance`,
+      ),
+    );
+  }
+
+  async getAcceptProducts(telegramUserId: number): Promise<MarketplaceAcceptProductView[]> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/marketplace/accept-products`,
+    );
+    return this.parse(z.object({ items: z.array(acceptProductSchema) }), payload).items;
   }
 
   private parse<T>(schema: z.ZodType<T>, payload: unknown): T {
