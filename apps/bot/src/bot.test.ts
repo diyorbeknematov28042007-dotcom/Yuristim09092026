@@ -1,4 +1,12 @@
-import type { BotOnboardingAction, BotUserContext, UserView } from '@yuristim/types';
+import type {
+  BotLawyerContext,
+  BotOnboardingAction,
+  BotUserContext,
+  BotVerificationAction,
+  LawyerProfileView,
+  LawyerVerificationView,
+  UserView,
+} from '@yuristim/types';
 import type { Update, UserFromGetMe } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import {
@@ -48,6 +56,9 @@ class FakeApi implements YuristimApi {
   requestedTelegramIds: number[] = [];
   data: BotUserContext = { hasPin: false, user: user() };
   ensuredTelegramIds: number[] = [];
+  lawyer: BotLawyerContext = { profile: null, specializations: [], verification: null };
+  verificationActions: BotVerificationAction[] = [];
+  uploads: Array<{ kind: string }> = [];
 
   ensureTelegramUser(identity: { telegramUserId: number }): Promise<EnsureUserResult> {
     this.ensuredTelegramIds.push(identity.telegramUserId);
@@ -105,6 +116,116 @@ class FakeApi implements YuristimApi {
     }
     return Promise.resolve(this.data);
   }
+
+  getLawyerContext(): Promise<BotLawyerContext> {
+    return Promise.resolve(this.lawyer);
+  }
+
+  updateVerification(
+    _telegramUserId: number,
+    action: BotVerificationAction,
+  ): Promise<BotLawyerContext['verification']> {
+    this.verificationActions.push(action);
+    if (action.action === 'start') {
+      this.lawyer.verification = verification({ type: action.type ?? 'initial' });
+    } else if (action.action === 'cancel') {
+      this.lawyer.verification = null;
+    } else if (this.lawyer.verification) {
+      const draft = { ...this.lawyer.verification.draft };
+      if (action.action === 'set_full_name') {
+        draft.fullName = action.fullName;
+        draft.step = 'region';
+      }
+      if (action.action === 'set_region') {
+        draft.region = action.region;
+        draft.step = 'specializations';
+      }
+      if (action.action === 'toggle_specialization') draft.specializationCodes = [action.code];
+      if (action.action === 'finish_specializations') draft.step = 'experience';
+      if (action.action === 'set_experience') {
+        draft.experienceYears = action.experienceYears;
+        draft.step = 'bio';
+      }
+      if (action.action === 'set_bio') {
+        draft.bio = action.bio;
+        draft.step = 'price';
+      }
+      if (action.action === 'set_price') {
+        draft.consultationPrice = action.consultationPrice;
+        draft.step = 'profile_image';
+      }
+      if (action.action === 'set_profile_image') {
+        draft.profileImagePath = action.path;
+        draft.step = 'verification_document';
+      }
+      if (action.action === 'add_verification_document') {
+        draft.verificationDocumentPaths = [action.path];
+        draft.step = 'summary';
+      }
+      this.lawyer.verification = {
+        ...this.lawyer.verification,
+        draft,
+        status: action.action === 'submit' ? 'pending_review' : 'draft',
+      };
+    }
+    return Promise.resolve(this.lawyer.verification);
+  }
+
+  uploadVerificationFile(
+    _telegramUserId: number,
+    input: { kind: 'profile_image' | 'verification_document' },
+  ): Promise<{ path: string }> {
+    this.uploads.push(input);
+    const path = input.kind === 'profile_image' ? 'test/avatar.jpg' : 'test/license.pdf';
+    return this.updateVerification(
+      _telegramUserId,
+      input.kind === 'profile_image'
+        ? { action: 'set_profile_image', path }
+        : { action: 'add_verification_document', path },
+    ).then(() => ({ path }));
+  }
+
+  switchMode(_telegramUserId: number, mode: 'user' | 'lawyer'): Promise<UserView> {
+    this.data.user = { ...this.data.user, activeMode: mode };
+    return Promise.resolve(this.data.user);
+  }
+}
+
+function verification(overrides: Partial<LawyerVerificationView> = {}): LawyerVerificationView {
+  return {
+    draft: { step: 'full_name' },
+    id: '10000000-0000-4000-8000-000000000001',
+    rejectReason: null,
+    reviewedAt: null,
+    status: 'draft',
+    submittedAt: null,
+    type: 'initial',
+    ...overrides,
+  };
+}
+
+function lawyerProfile(overrides: Partial<LawyerProfileView> = {}): LawyerProfileView {
+  return {
+    bio: 'Professional lawyer biography',
+    consultationPrice: null,
+    createdAt: '2026-09-10T00:00:00Z',
+    currency: 'UZS',
+    duid: 'yr_abcdefghijklmnop',
+    experienceYears: 5,
+    fullName: 'Diyorbek Nematov',
+    id: '20000000-0000-4000-8000-000000000001',
+    jobsCount: 0,
+    profileImageUrl: null,
+    publicSlug: 'yr_abcdefghijklmnop',
+    ratingAverage: 0,
+    ratingCount: 0,
+    region: 'Toshkent',
+    specializations: [],
+    telegramUsername: 'diyorbek',
+    verificationStatus: 'approved',
+    verifiedAt: '2026-09-10T00:00:00Z',
+    ...overrides,
+  };
 }
 
 interface TelegramCall {
@@ -120,6 +241,7 @@ function fixture(api = new FakeApi()) {
     internalApiSecret: 'test-internal-api-secret-32-characters',
     termsVersion: '2026-09',
     token: 'test-token',
+    fetch: () => Promise.resolve(new Response(Buffer.from('%PDF-1.4 test'))),
   });
   const calls: TelegramCall[] = [];
   bot.api.config.use(async (_previous, method, payload) => {
@@ -133,6 +255,17 @@ function fixture(api = new FakeApi()) {
           from: botInfo,
           message_id: calls.length,
           text: String((payload as { text?: string }).text ?? ''),
+        },
+      } as never;
+    }
+    if (method === 'getFile') {
+      return {
+        ok: true,
+        result: {
+          file_id: 'file',
+          file_path: 'documents/file.pdf',
+          file_size: 100,
+          file_unique_id: 'unique',
         },
       } as never;
     }
@@ -190,6 +323,29 @@ function textUpdate(text: string, updateId: number): Update {
       from: telegramUser,
       message_id: updateId,
       text,
+    },
+    update_id: updateId,
+  };
+}
+
+function documentUpdate(
+  updateId: number,
+  mimeType = 'application/pdf',
+  filename = 'license.pdf',
+): Update {
+  return {
+    message: {
+      chat,
+      date: 1_789_000_000,
+      document: {
+        file_id: 'file',
+        file_name: filename,
+        file_size: 100,
+        file_unique_id: 'unique',
+        mime_type: mimeType,
+      },
+      from: telegramUser,
+      message_id: updateId,
     },
     update_id: updateId,
   };
@@ -372,5 +528,86 @@ describe('menus and callback security', () => {
     } finally {
       console.error = errorLog;
     }
+  });
+});
+
+describe('lawyer verification', () => {
+  it('persists every verification step, uploads bounded files, and submits', async () => {
+    const api = new FakeApi();
+    api.data.user = user({
+      fullName: 'Diyorbek Nematov',
+      language: 'uz',
+      onboardingRole: 'lawyer',
+      onboardingStatus: 'completed',
+    });
+    api.lawyer.specializations = [
+      { code: 'civil', id: '30000000-0000-4000-8000-000000000001', name: 'Fuqarolik huquqi' },
+    ];
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('settings:lawyer-profile', 110), botInfo);
+    await bot.handleUpdate(callbackUpdate('verify:start', 111), botInfo);
+    await bot.handleUpdate(textUpdate('Diyorbek Nematov', 112), botInfo);
+    await bot.handleUpdate(textUpdate('Toshkent shahri', 113), botInfo);
+    await bot.handleUpdate(callbackUpdate('verify:spec:civil', 114), botInfo);
+    await bot.handleUpdate(callbackUpdate('verify:spec-done', 115), botInfo);
+    await bot.handleUpdate(textUpdate('5', 116), botInfo);
+    await bot.handleUpdate(
+      textUpdate('Fuqarolik huquqi bo‘yicha professional yuristman.', 117),
+      botInfo,
+    );
+    await bot.handleUpdate(callbackUpdate('verify:price-skip', 118), botInfo);
+    await bot.handleUpdate(documentUpdate(119, 'image/jpeg', 'avatar.jpg'), botInfo);
+    await bot.handleUpdate(documentUpdate(120), botInfo);
+    await bot.handleUpdate(callbackUpdate('verify:submit', 121), botInfo);
+    expect(api.verificationActions.map((action) => action.action)).toEqual(
+      expect.arrayContaining([
+        'start',
+        'set_full_name',
+        'set_region',
+        'toggle_specialization',
+        'finish_specializations',
+        'set_experience',
+        'set_bio',
+        'set_price',
+        'submit',
+      ]),
+    );
+    expect(api.uploads.map((upload) => upload.kind)).toEqual([
+      'profile_image',
+      'verification_document',
+    ]);
+    expect(api.lawyer.verification?.status).toBe('pending_review');
+    expect(texts(calls)).toContain(t('uz', 'verificationSubmitted'));
+  });
+
+  it.each(['uz', 'ru', 'en'] as const)(
+    'shows rejected reason in %s and allows resubmit',
+    async (language) => {
+      const api = new FakeApi();
+      api.data.user = user({ language, onboardingRole: 'lawyer', onboardingStatus: 'completed' });
+      api.lawyer.verification = verification({
+        rejectReason: 'Invalid document',
+        status: 'rejected',
+      });
+      const { bot, calls } = fixture(api);
+      await bot.handleUpdate(callbackUpdate('settings:lawyer-profile', 130), botInfo);
+      expect(texts(calls).join('\n')).toContain(t(language, 'verificationRejected'));
+      expect(texts(calls).join('\n')).toContain('Invalid document');
+    },
+  );
+
+  it('switches an approved lawyer to the lawyer keyboard', async () => {
+    const api = new FakeApi();
+    api.data.user = user({
+      language: 'en',
+      onboardingRole: 'lawyer',
+      onboardingStatus: 'completed',
+    });
+    api.lawyer.profile = lawyerProfile();
+    api.lawyer.verification = verification({ status: 'approved' });
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('lawyer:mode', 140), botInfo);
+    expect(api.data.user.activeMode).toBe('lawyer');
+    expect(JSON.stringify(calls)).toContain(t('en', 'marketplace'));
   });
 });
