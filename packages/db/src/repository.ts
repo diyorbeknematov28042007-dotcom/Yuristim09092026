@@ -34,6 +34,7 @@ export interface CoreRepository {
   updateTelegramMetadata(id: string, identity: TelegramIdentityInput): Promise<UserRow>;
   updateUser(id: string, update: UserUpdate): Promise<UserRow>;
   listUserTags(userId: string, now: Date): Promise<UserTagRow[]>;
+  isLawyerApproved(userId: string): Promise<boolean>;
 
   createSession(input: {
     userId: string;
