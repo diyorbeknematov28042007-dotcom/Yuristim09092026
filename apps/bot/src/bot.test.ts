@@ -3,8 +3,13 @@ import type {
   BotOnboardingAction,
   BotUserContext,
   BotVerificationAction,
+  CreditBalanceView,
+  CreditProductView,
+  CreditTransactionPage,
   LawyerProfileView,
   LawyerVerificationView,
+  MarketplaceAcceptBalanceView,
+  MarketplaceAcceptProductView,
   UserView,
 } from '@yuristim/types';
 import type { Update, UserFromGetMe } from 'grammy/types';
@@ -61,6 +66,45 @@ class FakeApi implements YuristimApi {
   lawyer: BotLawyerContext = { profile: null, specializations: [], verification: null };
   verificationActions: BotVerificationAction[] = [];
   uploads: Array<{ kind: string }> = [];
+  creditBalance: CreditBalanceView = {
+    bonus: 50,
+    lowBalance: false,
+    nextExpiry: '2026-09-14T19:00:00.000Z',
+    paid: 0,
+    total: 62,
+    weekly: 12,
+    zeroBalance: false,
+  };
+  creditHistory: CreditTransactionPage = {
+    items: [
+      {
+        amount: 50,
+        balanceAfter: 50,
+        bucketType: 'bonus',
+        createdAt: '2026-09-09T10:00:00.000Z',
+        expiresAt: null,
+        id: '30000000-0000-4000-8000-000000000001',
+        reason: 'Welcome',
+        type: 'welcome_bonus',
+      },
+    ],
+    limit: 5,
+    page: 1,
+    total: 1,
+  };
+  creditProducts: CreditProductView[] = [];
+  acceptBalance: MarketplaceAcceptBalanceView = { balance: 2, nextExpiry: null };
+  acceptProducts: MarketplaceAcceptProductView[] = [
+    {
+      acceptCount: 1,
+      code: 'single_accept',
+      currency: 'UZS',
+      expiresInDays: null,
+      id: '40000000-0000-4000-8000-000000000001',
+      name: '1 qabul',
+      price: 9900,
+    },
+  ];
 
   ensureTelegramUser(identity: { telegramUserId: number }): Promise<EnsureUserResult> {
     this.ensuredTelegramIds.push(identity.telegramUserId);
@@ -190,6 +234,26 @@ class FakeApi implements YuristimApi {
   switchMode(_telegramUserId: number, mode: 'user' | 'lawyer'): Promise<UserView> {
     this.data.user = { ...this.data.user, activeMode: mode };
     return Promise.resolve(this.data.user);
+  }
+
+  getCreditBalance(): Promise<CreditBalanceView> {
+    return Promise.resolve(this.creditBalance);
+  }
+
+  getCreditHistory(): Promise<CreditTransactionPage> {
+    return Promise.resolve(this.creditHistory);
+  }
+
+  getCreditProducts(): Promise<CreditProductView[]> {
+    return Promise.resolve(this.creditProducts);
+  }
+
+  getAcceptBalance(): Promise<MarketplaceAcceptBalanceView> {
+    return Promise.resolve(this.acceptBalance);
+  }
+
+  getAcceptProducts(): Promise<MarketplaceAcceptProductView[]> {
+    return Promise.resolve(this.acceptProducts);
   }
 }
 
@@ -528,6 +592,39 @@ describe('menus and callback security', () => {
     const { bot, calls } = fixture(api);
     await bot.handleUpdate(textUpdate(t('ru', 'findClients'), 54), botInfo);
     expect(texts(calls)).toContain(t('ru', 'findClientsLater'));
+  });
+
+  it.each(['uz', 'ru', 'en'] as const)(
+    'renders balance, product, and five-item history navigation in %s',
+    async (language) => {
+      const api = new FakeApi();
+      api.data.user = user({ language, onboardingRole: 'user', onboardingStatus: 'completed' });
+      const { bot, calls } = fixture(api);
+      await bot.handleUpdate(textUpdate(t(language, 'balance'), 55), botInfo);
+      await bot.handleUpdate(callbackUpdate('credits:buy', 56), botInfo);
+      await bot.handleUpdate(callbackUpdate('credits:history', 57), botInfo);
+      await bot.handleUpdate(callbackUpdate('credits:all-plans', 58), botInfo);
+      expect(texts(calls).join('\n')).toContain(t(language, 'totalBalance'));
+      expect(texts(calls)).toContain(
+        `${t(language, 'creditProductsTitle')}\n\n${t(language, 'noActiveCreditProducts')}`,
+      );
+      expect(texts(calls).join('\n')).toContain(t(language, 'creditTypeWelcomeBonus'));
+      expect(texts(calls)).toContain(t(language, 'plansUnavailable'));
+    },
+  );
+
+  it('renders accept units for an approved lawyer', async () => {
+    const api = new FakeApi();
+    api.data.user = user({
+      activeMode: 'lawyer',
+      language: 'uz',
+      onboardingRole: 'lawyer',
+      onboardingStatus: 'completed',
+    });
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('credits:accepts', 59), botInfo);
+    expect(texts(calls).join('\n')).toContain(`${t('uz', 'acceptUnits')}: 2`);
+    expect(texts(calls).join('\n')).toContain('9 900 UZS');
   });
 
   it('rejects malformed callbacks and defines the lawyer menu renderer', async () => {
