@@ -2,9 +2,10 @@
 
 Yuristim — O‘zbekiston fuqarolari va bizneslari uchun yuridik yordam, huquqiy
 hujjatlar va professional yuristlarni yagona platformada birlashtiruvchi LegalTech
-ekotizimi. Repository Phase 4 doirasida database/core auth foundationi, multilingual
-Telegram Bot hamda lawyer profile va verification lifecycle'ni o‘z ichiga oladi;
-marketplace, payment, credits va AI keyingi fazalarga qoldirilgan.
+ekotizimi. Repository Phase 5 doirasida database/core auth foundationi, multilingual
+Telegram Bot, lawyer verification, immutable credits/accept ledgers va provider-neutral
+payment lifecycle'ni o‘z ichiga oladi. Marketplace listinglari va AI keyingi fazalarga
+qoldirilgan.
 
 ## Arxitektura
 
@@ -22,7 +23,8 @@ server-controlled sessionlardan foydalanadi. Batafsil:
 [architecture](docs/architecture.md), [authentication](docs/authentication.md) va
 [database](docs/database.md). Bot tafsilotlari: [telegram-bot](docs/telegram-bot.md).
 Lawyer review va deployment: [lawyer verification](docs/lawyer-verification.md),
-[deployment](docs/deployment.md).
+[deployment](docs/deployment.md). Credits va payments: [credits](docs/credits.md),
+[payments](docs/payments.md), [marketplace balance](docs/marketplace-balance.md).
 
 ## Monorepo strukturasi
 
@@ -55,7 +57,7 @@ Lawyer review va deployment: [lawyer verification](docs/lawyer-verification.md),
 ```bash
 git clone https://github.com/diyorbeknematov28042007-dotcom/Yuristim09092026.git
 cd Yuristim09092026
-git checkout phase/04-lawyer-verification
+git checkout phase/05-credits-payments
 corepack enable
 pnpm install --frozen-lockfile
 ```
@@ -68,7 +70,8 @@ cp .env.example .env
 
 API uchun `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET` va `INTERNAL_BOT_API_SECRET`
-majburiy. Bot API bilan bir xil `INTERNAL_BOT_API_SECRET` ishlatadi.
+majburiy. Payment webhook uchun `PAYMENT_WEBHOOK_SECRET` ham faqat API secret sifatida
+beriladi. Bot API bilan bir xil `INTERNAL_BOT_API_SECRET` ishlatadi.
 `ADMIN_BOOTSTRAP_USERNAME` va `ADMIN_BOOTSTRAP_PASSWORD` faqat birinchi adminni
 xavfsiz bootstrap qilish zarur bo‘lganda juft holda beriladi. Bot uchun
 `ADMIN_TELEGRAM_ID` majburiy; `PUBLIC_OFFER_URL`, `PRIVACY_URL` va
@@ -116,11 +119,11 @@ supabase test db
   public profil route'i.
 - **API:** health/readiness, Core User API, Telegram auth challenge, PIN,
   HttpOnly session, lawyer verification/admin review va HMAC-protected Bot
-  endpointlari.
+  endpointlari; credits, accept balances va sandbox payment lifecycle.
 - **Bot:** grammY transport; `/start`, persistent onboarding, uch tilli RK/IK,
   settings/profile, persistent lawyer verification, multi-specialization, private
-  fayl upload va mode switch. Barcha business state imzolangan internal API orqali
-  yuradi; database'ga bevosita kirmaydi.
+  fayl upload, mode switch va real balans/tariflar UX. Barcha business state imzolangan
+  internal API orqali yuradi; database'ga bevosita kirmaydi.
 
 ## Deployment
 
