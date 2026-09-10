@@ -4,6 +4,7 @@ import {
   USER_ROLES,
   type BotOnboardingAction,
   type BotVerificationAction,
+  type Language,
 } from '@yuristim/types';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -11,6 +12,7 @@ import { parseInput } from '../auth/http.js';
 import { verifyInternalRequest } from '../auth/internal-auth.js';
 import type { CoreAuthService } from '../auth/service.js';
 import type { LawyerService } from '../lawyers/service.js';
+import type { CreditService } from '../credits/service.js';
 
 const identitySchema = z
   .object({
@@ -21,6 +23,9 @@ const identitySchema = z
   .strict();
 
 const telegramUserIdSchema = z.coerce.number().int().positive().safe();
+function userLanguage(value: string | null): Language {
+  return LANGUAGES.includes(value as Language) ? (value as Language) : 'uz';
+}
 const onboardingActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('set_language'), language: z.enum(LANGUAGES) }).strict(),
   z.object({ action: z.literal('set_role'), role: z.enum(USER_ROLES) }).strict(),
@@ -75,6 +80,7 @@ export function registerInternalRoutes(
   service: CoreAuthService,
   internalBotSecret: string,
   lawyerService?: LawyerService,
+  creditService?: CreditService,
 ): void {
   app.post('/internal/telegram/users/ensure', async (request, reply) => {
     verifyInternalRequest(request, request.body, internalBotSecret);
@@ -113,6 +119,68 @@ export function registerInternalRoutes(
     );
     return service.confirmTelegramLogin(body.challenge, body.identity);
   });
+
+  if (creditService) {
+    app.get('/internal/telegram/users/:telegramUserId/credits/balance', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return creditService.getBalance(user.id);
+    });
+
+    app.get('/internal/telegram/users/:telegramUserId/credits/transactions', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const query = parseInput(
+        z.object({ limit: z.coerce.number().int().min(1).max(20).default(5) }).strict(),
+        request.query,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return creditService.history({ limit: query.limit, page: 1, userId: user.id });
+    });
+
+    app.get('/internal/telegram/users/:telegramUserId/credits/products', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return { items: await creditService.products(userLanguage(user.language)) };
+    });
+
+    app.get(
+      '/internal/telegram/users/:telegramUserId/marketplace/accept-balance',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return creditService.acceptBalance(user.id);
+      },
+    );
+
+    app.get(
+      '/internal/telegram/users/:telegramUserId/marketplace/accept-products',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return { items: await creditService.acceptProducts(user.id, userLanguage(user.language)) };
+      },
+    );
+  }
 
   if (!lawyerService) return;
 
