@@ -28,12 +28,22 @@ const staticCallbacks = [
   'questions:suggestion',
   'questions:complaint',
   'questions:faq',
+  'verify:start',
+  'verify:edit',
+  'verify:back',
+  'verify:cancel',
+  'verify:spec-done',
+  'verify:price-skip',
+  'verify:submit',
+  'lawyer:mode',
+  'user:mode',
 ] as const;
 
 export type CallbackData =
   | (typeof staticCallbacks)[number]
   | `lang:${(typeof LANGUAGES)[number]}`
-  | `role:${(typeof USER_ROLES)[number]}`;
+  | `role:${(typeof USER_ROLES)[number]}`
+  | `verify:spec:${string}`;
 
 const validCallbacks = new Set<string>([
   ...staticCallbacks,
@@ -42,5 +52,7 @@ const validCallbacks = new Set<string>([
 ]);
 
 export function parseCallbackData(value: string): CallbackData | null {
-  return value.length <= 64 && validCallbacks.has(value) ? (value as CallbackData) : null;
+  if (value.length > 64) return null;
+  if (/^verify:spec:[a-z][a-z0-9_]{1,40}$/.test(value)) return value as CallbackData;
+  return validCallbacks.has(value) ? (value as CallbackData) : null;
 }

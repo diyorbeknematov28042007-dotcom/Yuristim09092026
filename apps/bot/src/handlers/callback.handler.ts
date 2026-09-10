@@ -14,6 +14,10 @@ import {
   showMainMenu,
   showOnboardingStep,
 } from '../services/navigation.service.js';
+import {
+  showLawyerProfile,
+  showVerificationStep,
+} from '../services/lawyer-verification.service.js';
 import { parseCallbackData } from '../types/callback.js';
 
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
@@ -83,6 +87,7 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       await editOrReply(context, t(language, 'onboardingComplete'));
       if (data.user.onboardingRole === 'lawyer') {
         await context.reply(t(language, 'lawyerInfo'));
+        await showLawyerProfile(context, language);
       }
       await showMainMenu(context, data);
       return;
@@ -116,6 +121,81 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
     }
     if (callback === 'nav:balance') {
       await editOrReply(context, t(language, 'balanceLater'));
+      return;
+    }
+
+    if (callback === 'verify:start' || callback === 'verify:edit') {
+      if (callback === 'verify:edit')
+        await editOrReply(context, t(language, 'profileChangeWarning'));
+      const verification = await context.yuristimApi.updateVerification(context.from.id, {
+        action: 'start',
+        type: callback === 'verify:edit' ? 'profile_update' : 'initial',
+      });
+      await showVerificationStep(context, language, verification);
+      return;
+    }
+    if (callback === 'verify:back') {
+      const verification = await context.yuristimApi.updateVerification(context.from.id, {
+        action: 'back',
+      });
+      await showVerificationStep(context, language, verification);
+      return;
+    }
+    if (callback === 'verify:cancel') {
+      await context.yuristimApi.updateVerification(context.from.id, { action: 'cancel' });
+      await editOrReply(context, t(language, 'verificationCancelled'));
+      await showLawyerProfile(context, language);
+      return;
+    }
+    if (callback.startsWith('verify:spec:')) {
+      const verification = await context.yuristimApi.updateVerification(context.from.id, {
+        action: 'toggle_specialization',
+        code: callback.slice('verify:spec:'.length),
+      });
+      await showVerificationStep(context, language, verification);
+      return;
+    }
+    if (callback === 'verify:spec-done') {
+      const verification = await context.yuristimApi.updateVerification(context.from.id, {
+        action: 'finish_specializations',
+      });
+      await showVerificationStep(context, language, verification);
+      return;
+    }
+    if (callback === 'verify:price-skip') {
+      const verification = await context.yuristimApi.updateVerification(context.from.id, {
+        action: 'set_price',
+        consultationPrice: null,
+      });
+      await showVerificationStep(context, language, verification);
+      return;
+    }
+    if (callback === 'verify:submit') {
+      const verification = await context.yuristimApi.updateVerification(context.from.id, {
+        action: 'submit',
+      });
+      await editOrReply(context, t(language, 'verificationSubmitted'));
+      if (context.botConfig.adminTelegramId && verification) {
+        await context.api
+          .sendMessage(
+            context.botConfig.adminTelegramId,
+            `New lawyer verification: ${verification.id}`,
+          )
+          .catch(() => undefined);
+      }
+      return;
+    }
+    if (callback === 'lawyer:mode' || callback === 'user:mode') {
+      await context.yuristimApi.switchMode(
+        context.from.id,
+        callback === 'lawyer:mode' ? 'lawyer' : 'user',
+      );
+      data = await context.yuristimApi.getTelegramUserContext(context.from.id);
+      await editOrReply(
+        context,
+        t(language, callback === 'lawyer:mode' ? 'verificationModeEnabled' : 'roleChanged'),
+      );
+      await showMainMenu(context, data);
       return;
     }
 
@@ -165,11 +245,12 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       await editOrReply(context, shell.text, shell.options);
       return;
     }
+    if (callback === 'settings:lawyer-profile') {
+      await showLawyerProfile(context, language);
+      return;
+    }
     if (callback.startsWith('settings:')) {
-      const text =
-        callback === 'settings:lawyer-profile'
-          ? t(language, 'lawyerModeLocked')
-          : t(language, 'featureLater');
+      const text = t(language, 'featureLater');
       const shell = shellBack(language, text, 'nav:settings');
       await editOrReply(context, shell.text, shell.options);
       return;

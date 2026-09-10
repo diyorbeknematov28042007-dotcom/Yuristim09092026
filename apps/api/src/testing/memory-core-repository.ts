@@ -16,6 +16,7 @@ export class MemoryCoreRepository implements CoreRepository {
   readonly sessions = new Map<string, SessionRow>();
   readonly loginRequests = new Map<string, LoginRequestRow>();
   readonly tags = new Map<string, UserTagRow>();
+  readonly approvedLawyerUserIds = new Set<string>();
 
   findUserById(id: string): Promise<UserRow | null> {
     return Promise.resolve(this.users.get(id) ?? null);
@@ -88,6 +89,10 @@ export class MemoryCoreRepository implements CoreRepository {
           (tag.expires_at === null || new Date(tag.expires_at).getTime() > now.getTime()),
       ),
     );
+  }
+
+  isLawyerApproved(userId: string): Promise<boolean> {
+    return Promise.resolve(this.approvedLawyerUserIds.has(userId));
   }
 
   createSession(input: {

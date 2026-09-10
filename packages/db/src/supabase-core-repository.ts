@@ -105,6 +105,16 @@ export class SupabaseCoreRepository implements CoreRepository {
     return data;
   }
 
+  async isLawyerApproved(userId: string): Promise<boolean> {
+    const { count, error } = await this.client
+      .from('lawyer_profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('verification_status', 'approved');
+    if (error) throwDatabaseError(error);
+    return count === 1;
+  }
+
   async createSession(input: {
     userId: string;
     tokenHash: string;
