@@ -15,6 +15,8 @@ import type { CreditService } from './modules/credits/service.js';
 import { registerInternalRoutes } from './modules/internal/routes.js';
 import { registerLawyerRoutes } from './modules/lawyers/routes.js';
 import type { LawyerService } from './modules/lawyers/service.js';
+import { registerMarketplaceRoutes } from './modules/marketplace/routes.js';
+import type { MarketplaceService } from './modules/marketplace/service.js';
 import { registerPaymentRoutes } from './modules/payments/routes.js';
 import type { PaymentService } from './modules/payments/service.js';
 import { registerUserRoutes } from './modules/users/routes.js';
@@ -30,6 +32,7 @@ export interface BuildAppOptions {
     adminService?: AdminService;
     creditService?: CreditService;
     paymentService?: PaymentService;
+    marketplaceService?: MarketplaceService;
   };
   logger?: FastifyServerOptions<RawServerDefault>['logger'];
 }
@@ -67,6 +70,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       if (core.lawyerService) {
         registerLawyerRoutes(coreApp, { auth: core.service, lawyers: core.lawyerService });
       }
+      if (core.marketplaceService) {
+        registerMarketplaceRoutes(coreApp, {
+          auth: core.service,
+          marketplace: core.marketplaceService,
+        });
+      }
       if (core.adminService) {
         registerAdminRoutes(coreApp, {
           ...(core.creditService ? { credits: core.creditService } : {}),
@@ -87,6 +96,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         core.internalBotSecret,
         core.lawyerService,
         core.creditService,
+        core.marketplaceService,
       );
     });
   }
