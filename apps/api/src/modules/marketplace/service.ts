@@ -246,6 +246,23 @@ export class MarketplaceService {
     return postView(row, language);
   }
 
+  async publicListing(identifier: string, language: Language) {
+    const post = await this.publicContext(identifier, language);
+    return {
+      acceptanceCount: post.acceptanceCount,
+      additionalDetails: post.additionalDetails,
+      createdAt: post.createdAt,
+      description: post.description,
+      expiresAt: post.expiresAt,
+      maxAcceptances: post.maxAcceptances,
+      publicIdentifier: post.publicIdentifier,
+      region: post.region,
+      specializationCode: post.specializationCode,
+      specializationName: post.specializationName,
+      status: post.status,
+    };
+  }
+
   async recordChannelMessage(postId: string, messageId: number): Promise<void> {
     await this.repository.setChannelMessage(postId, messageId);
   }

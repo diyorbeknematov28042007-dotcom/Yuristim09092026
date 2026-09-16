@@ -136,6 +136,16 @@ describe('MarketplaceService', () => {
     expect(JSON.stringify(result)).not.toContain('private-lawyer-id');
   });
 
+  it('does not expose internal identifiers in the public listing context', async () => {
+    const repo = repository({ findPublicPost: vi.fn().mockResolvedValue(post()) });
+    const service = new MarketplaceService(repo, () => now);
+    const result = await service.publicListing(post().public_identifier, 'uz');
+    expect(result.publicIdentifier).toBe(post().public_identifier);
+    expect(JSON.stringify(result)).not.toContain(post().id);
+    expect(result).not.toHaveProperty('telegramChannelMessageId');
+    expect(result).not.toHaveProperty('selectedAcceptanceId');
+  });
+
   it('preserves known application errors', async () => {
     const expected = new AppError(409, 'MARKETPLACE_POST_CLOSED', 'closed');
     const repo = repository({ cancelPost: vi.fn().mockRejectedValue(expected) });

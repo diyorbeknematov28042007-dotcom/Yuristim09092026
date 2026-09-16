@@ -94,7 +94,7 @@ export function registerMarketplaceRoutes(
     const params = parseInput(z.object({ publicIdentifier }).strict(), request.params);
     const query = parseInput(z.object({ language: languageSchema }).strict(), request.query);
     return {
-      post: await options.marketplace.publicContext(params.publicIdentifier, query.language),
+      post: await options.marketplace.publicListing(params.publicIdentifier, query.language),
     };
   });
 
