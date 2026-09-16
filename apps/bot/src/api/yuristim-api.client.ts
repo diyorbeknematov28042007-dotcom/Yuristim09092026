@@ -13,6 +13,10 @@ import {
   type CreditTransactionPage,
   type MarketplaceAcceptBalanceView,
   type MarketplaceAcceptProductView,
+  type MarketplaceAcceptanceView,
+  type MarketplaceDraftView,
+  type MarketplacePostView,
+  type BotMarketplaceDraftAction,
   type UserView,
 } from '@yuristim/types';
 import { z } from 'zod';
@@ -52,6 +56,44 @@ export interface YuristimApi {
   getCreditProducts(telegramUserId: number): Promise<CreditProductView[]>;
   getAcceptBalance(telegramUserId: number): Promise<MarketplaceAcceptBalanceView>;
   getAcceptProducts(telegramUserId: number): Promise<MarketplaceAcceptProductView[]>;
+  getMarketplaceDraft(telegramUserId: number): Promise<MarketplaceDraftView | null>;
+  updateMarketplaceDraft(
+    telegramUserId: number,
+    action: BotMarketplaceDraftAction,
+  ): Promise<MarketplaceDraftView | null>;
+  confirmMarketplaceDraft(
+    telegramUserId: number,
+    idempotencyKey: string,
+  ): Promise<MarketplacePostView>;
+  getMarketplaceRequests(telegramUserId: number): Promise<MarketplacePostView[]>;
+  getMarketplaceAcceptances(
+    telegramUserId: number,
+    postId: string,
+  ): Promise<MarketplaceAcceptanceView[]>;
+  getMarketplaceListing(publicIdentifier: string, language: string): Promise<MarketplacePostView>;
+  acceptMarketplaceListing(
+    telegramUserId: number,
+    publicIdentifier: string,
+  ): Promise<{ duplicate: boolean; ownerTelegramId: number | null; postId: string }>;
+  selectMarketplaceLawyer(
+    telegramUserId: number,
+    postId: string,
+    acceptanceId: string,
+  ): Promise<{
+    acceptedLawyerTelegramIds: number[];
+    duplicate: boolean;
+    selectedLawyerTelegramId: number | null;
+  }>;
+  cancelMarketplaceRequest(
+    telegramUserId: number,
+    postId: string,
+  ): Promise<{ participantTelegramIds: number[]; post: MarketplacePostView }>;
+  reviewMarketplaceLawyer(telegramUserId: number, postId: string, rating: number): Promise<void>;
+  getMarketplaceDashboard(
+    telegramUserId: number,
+  ): Promise<{ accepted: number; closed: number; items: MarketplacePostView[]; selected: number }>;
+  recordMarketplaceChannelMessage(postId: string, messageId: number): Promise<void>;
+  recordMarketplaceChannelFailure(postId: string): Promise<void>;
 }
 
 export class YuristimApiError extends Error {
@@ -215,6 +257,44 @@ const acceptProductSchema = z.object({
   name: z.string(),
   price: z.number(),
 });
+const marketplacePostSchema = z.object({
+  acceptanceCount: z.number(),
+  additionalDetails: z.string().nullable(),
+  createdAt: z.string(),
+  description: z.string(),
+  expiresAt: z.string().nullable(),
+  id: z.string().uuid(),
+  maxAcceptances: z.number(),
+  publicIdentifier: z.string().regex(/^mp_[a-f0-9]{24}$/),
+  region: z.string().nullable(),
+  selectedAcceptanceId: z.string().uuid().nullable(),
+  specializationCode: z.string(),
+  specializationName: z.string(),
+  status: z.enum(['draft', 'open', 'selected', 'cancelled', 'expired']),
+  telegramChannelMessageId: z.number().nullable(),
+});
+const marketplaceDraftSchema = z.object({
+  additionalDetails: z.string().nullable(),
+  description: z.string().nullable(),
+  region: z.string().nullable(),
+  specializationCode: z.string().nullable(),
+  step: z.enum(['specialization', 'description', 'region', 'additional_details', 'preview']),
+});
+const marketplaceAcceptanceSchema = z.object({
+  acceptedAt: z.string(),
+  id: z.string().regex(/^ma_[a-f0-9]{20}$/),
+  lawyer: z.object({
+    duid: z.string(),
+    fullName: z.string(),
+    publicSlug: z.string(),
+    ratingAverage: z.number(),
+    ratingCount: z.number(),
+    region: z.string().nullable(),
+    specializations: z.array(specializationSchema),
+    verified: z.literal(true),
+  }),
+  status: z.enum(['accepted', 'selected', 'not_selected', 'cancelled']),
+});
 
 interface ClientOptions {
   baseUrl: string;
@@ -353,6 +433,156 @@ export class YuristimApiClient implements YuristimApi {
       `/internal/telegram/users/${telegramUserId}/marketplace/accept-products`,
     );
     return this.parse(z.object({ items: z.array(acceptProductSchema) }), payload).items;
+  }
+
+  async getMarketplaceDraft(telegramUserId: number): Promise<MarketplaceDraftView | null> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/marketplace/draft`,
+    );
+    return this.parse(z.object({ draft: marketplaceDraftSchema.nullable() }), payload).draft;
+  }
+
+  async updateMarketplaceDraft(
+    telegramUserId: number,
+    action: BotMarketplaceDraftAction,
+  ): Promise<MarketplaceDraftView | null> {
+    const payload = await this.request(
+      'PATCH',
+      `/internal/telegram/users/${telegramUserId}/marketplace/draft`,
+      action,
+    );
+    return this.parse(z.object({ draft: marketplaceDraftSchema.nullable() }), payload).draft;
+  }
+
+  async confirmMarketplaceDraft(
+    telegramUserId: number,
+    idempotencyKey: string,
+  ): Promise<MarketplacePostView> {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/marketplace/confirm`,
+      { idempotencyKey },
+    );
+    return this.parse(z.object({ post: marketplacePostSchema }), payload).post;
+  }
+
+  async getMarketplaceRequests(telegramUserId: number): Promise<MarketplacePostView[]> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/marketplace/requests`,
+    );
+    return this.parse(z.object({ items: z.array(marketplacePostSchema) }), payload).items;
+  }
+
+  async getMarketplaceAcceptances(
+    telegramUserId: number,
+    postId: string,
+  ): Promise<MarketplaceAcceptanceView[]> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/marketplace/requests/${postId}/acceptances`,
+    );
+    return this.parse(z.object({ items: z.array(marketplaceAcceptanceSchema) }), payload).items;
+  }
+
+  async getMarketplaceListing(
+    publicIdentifier: string,
+    language: string,
+  ): Promise<MarketplacePostView> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/marketplace/listings/${publicIdentifier}?language=${encodeURIComponent(language)}`,
+    );
+    return this.parse(z.object({ post: marketplacePostSchema }), payload).post;
+  }
+
+  async acceptMarketplaceListing(telegramUserId: number, publicIdentifier: string) {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/marketplace/listings/${publicIdentifier}/accept`,
+      {},
+    );
+    return this.parse(
+      z.object({
+        duplicate: z.boolean(),
+        ownerTelegramId: z.number().nullable(),
+        postId: z.string().uuid(),
+      }),
+      payload,
+    );
+  }
+
+  async selectMarketplaceLawyer(telegramUserId: number, postId: string, acceptanceId: string) {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/marketplace/requests/${postId}/select`,
+      { acceptanceId },
+    );
+    return this.parse(
+      z.object({
+        acceptedLawyerTelegramIds: z.array(z.number()),
+        duplicate: z.boolean(),
+        selectedLawyerTelegramId: z.number().nullable(),
+      }),
+      payload,
+    );
+  }
+
+  async cancelMarketplaceRequest(telegramUserId: number, postId: string) {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/marketplace/requests/${postId}/cancel`,
+      {},
+    );
+    return this.parse(
+      z.object({ participantTelegramIds: z.array(z.number()), post: marketplacePostSchema }),
+      payload,
+    );
+  }
+
+  async reviewMarketplaceLawyer(
+    telegramUserId: number,
+    postId: string,
+    rating: number,
+  ): Promise<void> {
+    await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/marketplace/requests/${postId}/review`,
+      { rating },
+    );
+  }
+
+  async getMarketplaceDashboard(telegramUserId: number) {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/marketplace/dashboard`,
+    );
+    return this.parse(
+      z.object({
+        accepted: z.number(),
+        closed: z.number(),
+        items: z.array(marketplacePostSchema),
+        selected: z.number(),
+      }),
+      payload,
+    );
+  }
+
+  async recordMarketplaceChannelMessage(postId: string, messageId: number): Promise<void> {
+    await this.request(
+      'PATCH',
+      `/internal/telegram/marketplace/requests/${postId}/channel-message`,
+      { messageId },
+    );
+  }
+
+  async recordMarketplaceChannelFailure(postId: string): Promise<void> {
+    await this.request(
+      'POST',
+      `/internal/telegram/marketplace/requests/${postId}/channel-failure`,
+      {},
+    );
   }
 
   private parse<T>(schema: z.ZodType<T>, payload: unknown): T {

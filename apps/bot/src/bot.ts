@@ -34,6 +34,8 @@ export interface CreateBotOptions {
   termsVersion?: string;
   botInfo?: UserFromGetMe;
   adminTelegramId?: number;
+  marketplaceChannelId?: number;
+  marketplaceChannelUrl?: string;
   fetch?: typeof fetch;
 }
 
@@ -57,6 +59,8 @@ export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
     ...(options.publicOfferUrl ? { publicOfferUrl: options.publicOfferUrl } : {}),
     ...(options.supportUsername ? { supportUsername: options.supportUsername } : {}),
     termsVersion: options.termsVersion ?? '2026-09',
+    marketplaceChannelId: options.marketplaceChannelId ?? -1003512004134,
+    marketplaceChannelUrl: options.marketplaceChannelUrl ?? 'https://t.me/yuristim_marketplace',
   };
 
   bot.use(safeErrorHandler());

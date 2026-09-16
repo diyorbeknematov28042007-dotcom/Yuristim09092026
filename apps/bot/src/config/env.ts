@@ -16,6 +16,8 @@ const optionalUsername = z.preprocess(
 const botEnvSchema = z.object({
   NODE_ENV: nodeEnvSchema,
   TELEGRAM_BOT_TOKEN: z.string().min(1),
+  MARKETPLACE_CHANNEL_ID: z.coerce.number().int().negative().safe(),
+  MARKETPLACE_CHANNEL_URL: z.string().url(),
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive().safe(),
   API_BASE_URL: z.string().url().default('http://localhost:3001'),
   INTERNAL_BOT_API_SECRET: z.string().min(32),

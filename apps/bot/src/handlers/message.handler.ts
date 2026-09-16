@@ -8,6 +8,12 @@ import { showMainMenu, showOnboardingStep } from '../services/navigation.service
 import { showVerificationStep } from '../services/lawyer-verification.service.js';
 import { validFullName } from '../services/user-context.service.js';
 import { showBalance } from '../services/credit.service.js';
+import {
+  showLawyerDiscovery,
+  showLawyerMarketplace,
+  showMarketplaceDraft,
+  showMarketplaceUserHome,
+} from '../services/marketplace.service.js';
 
 export function registerMessageHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('message:text', async (context) => {
@@ -94,6 +100,60 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
 
+    const marketplaceDraft =
+      typeof context.yuristimApi.getMarketplaceDraft === 'function'
+        ? await context.yuristimApi.getMarketplaceDraft(context.from.id)
+        : null;
+    if (marketplaceDraft) {
+      if (marketplaceDraft.step === 'description') {
+        if (message.trim().length < 20 || message.trim().length > 1500) {
+          await context.reply(t(language, 'verificationInvalidInput'));
+          return;
+        }
+        await showMarketplaceDraft(
+          context,
+          language,
+          await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+            action: 'set_description',
+            description: message.trim(),
+          }),
+        );
+        return;
+      }
+      if (marketplaceDraft.step === 'region') {
+        if (message.trim().length < 2 || message.trim().length > 120) {
+          await context.reply(t(language, 'verificationInvalidInput'));
+          return;
+        }
+        await showMarketplaceDraft(
+          context,
+          language,
+          await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+            action: 'set_region',
+            region: message.trim(),
+          }),
+        );
+        return;
+      }
+      if (marketplaceDraft.step === 'additional_details') {
+        if (message.trim().length < 2 || message.trim().length > 1500) {
+          await context.reply(t(language, 'verificationInvalidInput'));
+          return;
+        }
+        await showMarketplaceDraft(
+          context,
+          language,
+          await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+            action: 'set_additional_details',
+            additionalDetails: message.trim(),
+          }),
+        );
+        return;
+      }
+      await showMarketplaceDraft(context, language, marketplaceDraft);
+      return;
+    }
+
     if (message === t(language, 'services')) {
       await context.reply(t(language, 'servicesTitle'), {
         reply_markup: servicesKeyboard(language),
@@ -101,11 +161,11 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
     if (message === t(language, 'findLawyer') && data.user.activeMode === 'user') {
-      await context.reply(t(language, 'findLawyerLater'));
+      await showMarketplaceUserHome(context, language);
       return;
     }
     if (message === t(language, 'findClients') && data.user.activeMode === 'lawyer') {
-      await context.reply(t(language, 'findClientsLater'));
+      await showLawyerDiscovery(context, language);
       return;
     }
     if (message === t(language, 'settings')) {
@@ -129,7 +189,7 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
     if (message === t(language, 'marketplace')) {
-      await context.reply(t(language, 'featureLater'));
+      await showLawyerMarketplace(context, language);
       return;
     }
 

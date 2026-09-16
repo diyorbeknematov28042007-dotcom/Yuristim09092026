@@ -572,7 +572,7 @@ describe('menus and callback security', () => {
     await bot.handleUpdate(textUpdate(t('en', 'questions'), 53), botInfo);
     expect(texts(calls)).toEqual(
       expect.arrayContaining([
-        t('en', 'findLawyerLater'),
+        t('en', 'marketplaceUserTitle'),
         t('en', 'servicesTitle'),
         t('en', 'documentLater'),
         t('en', 'settingsTitle'),
@@ -591,7 +591,7 @@ describe('menus and callback security', () => {
     });
     const { bot, calls } = fixture(api);
     await bot.handleUpdate(textUpdate(t('ru', 'findClients'), 54), botInfo);
-    expect(texts(calls)).toContain(t('ru', 'findClientsLater'));
+    expect(texts(calls)).toContain(t('ru', 'marketplaceFindClientsText'));
   });
 
   it.each(['uz', 'ru', 'en'] as const)(
