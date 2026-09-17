@@ -8,6 +8,8 @@ import Fastify, {
 import { registerErrorHandler } from './lib/errors.js';
 import { registerAdminRoutes } from './modules/admin/routes.js';
 import type { AdminService } from './modules/admin/service.js';
+import { registerAiRoutes } from './modules/ai/routes.js';
+import type { AiService } from './modules/ai/service.js';
 import { registerAuthRoutes } from './modules/auth/routes.js';
 import type { CoreAuthService } from './modules/auth/service.js';
 import { registerCreditRoutes } from './modules/credits/routes.js';
@@ -33,6 +35,7 @@ export interface BuildAppOptions {
     creditService?: CreditService;
     paymentService?: PaymentService;
     marketplaceService?: MarketplaceService;
+    aiService?: AiService;
   };
   logger?: FastifyServerOptions<RawServerDefault>['logger'];
 }
@@ -53,7 +56,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerRequestContext(app);
   registerErrorHandler(app);
 
-  app.register(healthRoutes);
+  app.register(async (healthApp) => {
+    await healthRoutes(
+      healthApp,
+      options.core?.aiService
+        ? options.core.aiService.availability.bind(options.core.aiService)
+        : undefined,
+    );
+  });
 
   if (options.core) {
     const core = options.core;
@@ -66,6 +76,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       registerUserRoutes(coreApp, core.service);
       if (core.creditService) {
         registerCreditRoutes(coreApp, { auth: core.service, credits: core.creditService });
+      }
+      if (core.aiService) {
+        registerAiRoutes(coreApp, { ai: core.aiService, auth: core.service });
       }
       if (core.lawyerService) {
         registerLawyerRoutes(coreApp, { auth: core.service, lawyers: core.lawyerService });
@@ -97,6 +110,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         core.lawyerService,
         core.creditService,
         core.marketplaceService,
+        core.aiService,
       );
     });
   }

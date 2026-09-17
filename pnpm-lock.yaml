@@ -47,6 +47,9 @@ importers:
       '@node-rs/argon2':
         specifier: 2.2.0
         version: 2.2.0
+      '@yuristim/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@yuristim/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -117,7 +120,11 @@ importers:
         specifier: 19.2.7
         version: 19.2.7(@types/react@19.2.18)
 
-  packages/ai: {}
+  packages/ai:
+    dependencies:
+      '@yuristim/types':
+        specifier: workspace:*
+        version: link:../types
 
   packages/config:
     dependencies:
