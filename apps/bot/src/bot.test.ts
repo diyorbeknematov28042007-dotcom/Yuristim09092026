@@ -305,6 +305,8 @@ function fixture(api = new FakeApi()) {
     apiBaseUrl: 'http://localhost:3001',
     botInfo,
     internalApiSecret: 'test-internal-api-secret-32-characters',
+    marketplaceChannelId: -1000000000001,
+    marketplaceChannelUrl: 'https://t.me/test_marketplace',
     termsVersion: '2026-09',
     token: 'test-token',
     fetch: () => Promise.resolve(new Response(Buffer.from('%PDF-1.4 test'))),
@@ -572,7 +574,7 @@ describe('menus and callback security', () => {
     await bot.handleUpdate(textUpdate(t('en', 'questions'), 53), botInfo);
     expect(texts(calls)).toEqual(
       expect.arrayContaining([
-        t('en', 'findLawyerLater'),
+        t('en', 'marketplaceUserTitle'),
         t('en', 'servicesTitle'),
         t('en', 'documentLater'),
         t('en', 'settingsTitle'),
@@ -591,7 +593,7 @@ describe('menus and callback security', () => {
     });
     const { bot, calls } = fixture(api);
     await bot.handleUpdate(textUpdate(t('ru', 'findClients'), 54), botInfo);
-    expect(texts(calls)).toContain(t('ru', 'findClientsLater'));
+    expect(texts(calls)).toContain(t('ru', 'marketplaceFindClientsText'));
   });
 
   it.each(['uz', 'ru', 'en'] as const)(

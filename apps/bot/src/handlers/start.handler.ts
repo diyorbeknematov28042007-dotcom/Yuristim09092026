@@ -4,6 +4,13 @@ import { t } from '../i18n/index.js';
 import { resumeKeyboard } from '../keyboards/common.keyboard.js';
 import { showMainMenu, showOnboardingStep } from '../services/navigation.service.js';
 import { telegramIdentity } from '../services/user-context.service.js';
+import { showMarketplaceListing } from '../services/marketplace.service.js';
+
+export function parseMarketplaceStartParameter(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parameter = value.trim();
+  return /^mp_[a-f0-9]{24}$/.test(parameter) ? parameter : null;
+}
 
 export function registerStartHandler(composer: Composer<YuristimBotContext>): void {
   composer.command('start', async (context) => {
@@ -16,6 +23,11 @@ export function registerStartHandler(composer: Composer<YuristimBotContext>): vo
 
     const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
     if (data.user.onboardingStatus === 'completed') {
+      const deepLink = parseMarketplaceStartParameter(context.match);
+      if (deepLink) {
+        await showMarketplaceListing(context, data.user.language ?? 'uz', deepLink);
+        return;
+      }
       await showMainMenu(context, data);
       return;
     }

@@ -27,6 +27,18 @@ import {
 } from '../services/credit.service.js';
 import { balanceBackKeyboard } from '../keyboards/balance.keyboard.js';
 import { YuristimApiError } from '../api/yuristim-api.client.js';
+import {
+  confirmMarketplaceDraft,
+  editMarketplaceChannelStatus,
+  findMarketplacePost,
+  showLawyerMarketplace,
+  showMarketplaceAcceptances,
+  showMarketplaceDraft,
+  showMarketplaceRequest,
+  showMarketplaceRequests,
+  showMarketplaceReview,
+  showMarketplaceUserHome,
+} from '../services/marketplace.service.js';
 
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('callback_query:data', async (context) => {
@@ -129,6 +141,150 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
     }
     if (callback === 'nav:balance') {
       await showBalance(context, language);
+      return;
+    }
+    if (callback === 'mp:new') {
+      const draft = await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+        action: 'start',
+      });
+      await showMarketplaceDraft(context, language, draft);
+      return;
+    }
+    if (callback === 'mp:mine') {
+      await showMarketplaceRequests(context, language);
+      return;
+    }
+    if (callback.startsWith('mp:spec:')) {
+      const draft = await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+        action: 'set_specialization',
+        specializationCode: callback.slice('mp:spec:'.length),
+      });
+      await showMarketplaceDraft(context, language, draft);
+      return;
+    }
+    if (callback === 'mp:back') {
+      await showMarketplaceDraft(
+        context,
+        language,
+        await context.yuristimApi.updateMarketplaceDraft(context.from.id, { action: 'back' }),
+      );
+      return;
+    }
+    if (callback === 'mp:skip-region') {
+      await showMarketplaceDraft(
+        context,
+        language,
+        await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+          action: 'set_region',
+          region: null,
+        }),
+      );
+      return;
+    }
+    if (callback === 'mp:skip-details') {
+      await showMarketplaceDraft(
+        context,
+        language,
+        await context.yuristimApi.updateMarketplaceDraft(context.from.id, {
+          action: 'set_additional_details',
+          additionalDetails: null,
+        }),
+      );
+      return;
+    }
+    if (callback === 'mp:cancel-draft') {
+      await context.yuristimApi.updateMarketplaceDraft(context.from.id, { action: 'cancel' });
+      await showMarketplaceUserHome(context, language);
+      return;
+    }
+    if (callback === 'mp:confirm') {
+      await confirmMarketplaceDraft(context, language);
+      return;
+    }
+    if (callback.startsWith('mp:view:')) {
+      await showMarketplaceRequest(context, language, callback.slice('mp:view:'.length));
+      return;
+    }
+    if (callback.startsWith('mp:accepted:')) {
+      await showMarketplaceAcceptances(context, language, callback.slice('mp:accepted:'.length));
+      return;
+    }
+    if (callback.startsWith('mp:accept:')) {
+      const publicIdentifier = callback.slice('mp:accept:'.length);
+      const result = await context.yuristimApi.acceptMarketplaceListing(
+        context.from.id,
+        publicIdentifier,
+      );
+      await editOrReply(context, t(language, 'marketplaceAccepted'));
+      if (!result.duplicate && result.ownerTelegramId) {
+        await context.api
+          .sendMessage(result.ownerTelegramId, t(language, 'marketplaceLawyerAcceptedNotice'))
+          .catch(() => undefined);
+      }
+      const updated = await context.yuristimApi
+        .getMarketplaceListing(publicIdentifier, language)
+        .catch(() => null);
+      if (updated && updated.acceptanceCount >= updated.maxAcceptances) {
+        await editMarketplaceChannelStatus(context, updated, '🔒 Qabul limiti to‘ldi');
+      }
+      return;
+    }
+    if (callback.startsWith('mp:select:')) {
+      const [, , publicIdentifier, acceptanceId] = callback.split(':');
+      if (!publicIdentifier || !acceptanceId) return;
+      const post = await findMarketplacePost(context, publicIdentifier);
+      if (!post) return;
+      const result = await context.yuristimApi.selectMarketplaceLawyer(
+        context.from.id,
+        post.id,
+        acceptanceId,
+      );
+      if (!result.duplicate) {
+        for (const telegramId of result.acceptedLawyerTelegramIds) {
+          const message =
+            telegramId === result.selectedLawyerTelegramId
+              ? t(language, 'marketplaceChosenNotice')
+              : t(language, 'marketplaceClosedNotice');
+          await context.api.sendMessage(telegramId, message).catch(() => undefined);
+        }
+      }
+      const updated = await findMarketplacePost(context, publicIdentifier);
+      if (updated) await editMarketplaceChannelStatus(context, updated, '✅ Yurist tanlandi');
+      await editOrReply(context, t(language, 'marketplaceSelected'));
+      return;
+    }
+    if (callback.startsWith('mp:cancel:')) {
+      const publicIdentifier = callback.slice('mp:cancel:'.length);
+      const post = await findMarketplacePost(context, publicIdentifier);
+      if (!post) return;
+      const result = await context.yuristimApi.cancelMarketplaceRequest(context.from.id, post.id);
+      for (const telegramId of result.participantTelegramIds)
+        await context.api
+          .sendMessage(telegramId, t(language, 'marketplaceClosedNotice'))
+          .catch(() => undefined);
+      await editMarketplaceChannelStatus(context, result.post, '❌ Murojaat yopildi');
+      await editOrReply(context, t(language, 'marketplaceCancelled'));
+      return;
+    }
+    if (callback.startsWith('mp:review:')) {
+      await showMarketplaceReview(context, language, callback.slice('mp:review:'.length));
+      return;
+    }
+    if (callback.startsWith('mp:rate:')) {
+      const [, , publicIdentifier, ratingText] = callback.split(':');
+      if (!publicIdentifier || !ratingText) return;
+      const post = await findMarketplacePost(context, publicIdentifier);
+      if (!post) return;
+      await context.yuristimApi.reviewMarketplaceLawyer(
+        context.from.id,
+        post.id,
+        Number(ratingText),
+      );
+      await editOrReply(context, t(language, 'marketplaceReviewSaved'));
+      return;
+    }
+    if (callback === 'mp:dashboard') {
+      await showLawyerMarketplace(context, language);
       return;
     }
     if (callback === 'credits:buy') {

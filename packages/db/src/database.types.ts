@@ -578,6 +578,219 @@ export type Database = {
           },
         ];
       };
+      marketplace_acceptances: {
+        Row: {
+          accepted_at: string;
+          closed_at: string | null;
+          created_at: string;
+          id: string;
+          lawyer_id: string;
+          ledger_transaction_id: string;
+          marketplace_post_id: string;
+          public_id: string;
+          selected_at: string | null;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          accepted_at?: string;
+          closed_at?: string | null;
+          created_at?: string;
+          id?: string;
+          lawyer_id: string;
+          ledger_transaction_id: string;
+          marketplace_post_id: string;
+          public_id: string;
+          selected_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          accepted_at?: string;
+          closed_at?: string | null;
+          created_at?: string;
+          id?: string;
+          lawyer_id?: string;
+          ledger_transaction_id?: string;
+          marketplace_post_id?: string;
+          public_id?: string;
+          selected_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'marketplace_acceptances_lawyer_id_fkey';
+            columns: ['lawyer_id'];
+            isOneToOne: false;
+            referencedRelation: 'lawyer_profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'marketplace_acceptances_ledger_transaction_id_fkey';
+            columns: ['ledger_transaction_id'];
+            isOneToOne: true;
+            referencedRelation: 'marketplace_accept_transactions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'marketplace_acceptances_marketplace_post_id_fkey';
+            columns: ['marketplace_post_id'];
+            isOneToOne: false;
+            referencedRelation: 'marketplace_posts';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      marketplace_posts: {
+        Row: {
+          additional_details: string | null;
+          cancelled_at: string | null;
+          channel_message_id: number | null;
+          created_at: string;
+          description: string | null;
+          draft_step: string;
+          expires_at: string | null;
+          id: string;
+          idempotency_key: string;
+          language: string;
+          max_acceptances: number;
+          public_id: string;
+          publish_attempts: number;
+          publish_status: string;
+          published_at: string | null;
+          region: string | null;
+          selected_acceptance_id: string | null;
+          selected_at: string | null;
+          specialization_id: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          additional_details?: string | null;
+          cancelled_at?: string | null;
+          channel_message_id?: number | null;
+          created_at?: string;
+          description?: string | null;
+          draft_step?: string;
+          expires_at?: string | null;
+          id?: string;
+          idempotency_key: string;
+          language?: string;
+          max_acceptances?: number;
+          public_id: string;
+          publish_attempts?: number;
+          publish_status?: string;
+          published_at?: string | null;
+          region?: string | null;
+          selected_acceptance_id?: string | null;
+          selected_at?: string | null;
+          specialization_id?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          additional_details?: string | null;
+          cancelled_at?: string | null;
+          channel_message_id?: number | null;
+          created_at?: string;
+          description?: string | null;
+          draft_step?: string;
+          expires_at?: string | null;
+          id?: string;
+          idempotency_key?: string;
+          language?: string;
+          max_acceptances?: number;
+          public_id?: string;
+          publish_attempts?: number;
+          publish_status?: string;
+          published_at?: string | null;
+          region?: string | null;
+          selected_acceptance_id?: string | null;
+          selected_at?: string | null;
+          specialization_id?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'marketplace_posts_selected_acceptance_fkey';
+            columns: ['selected_acceptance_id'];
+            isOneToOne: false;
+            referencedRelation: 'marketplace_acceptances';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'marketplace_posts_specialization_id_fkey';
+            columns: ['specialization_id'];
+            isOneToOne: false;
+            referencedRelation: 'specializations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'marketplace_posts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      marketplace_reviews: {
+        Row: {
+          comment: string | null;
+          created_at: string;
+          id: string;
+          lawyer_id: string;
+          marketplace_post_id: string;
+          rating: number;
+          user_id: string;
+        };
+        Insert: {
+          comment?: string | null;
+          created_at?: string;
+          id?: string;
+          lawyer_id: string;
+          marketplace_post_id: string;
+          rating: number;
+          user_id: string;
+        };
+        Update: {
+          comment?: string | null;
+          created_at?: string;
+          id?: string;
+          lawyer_id?: string;
+          marketplace_post_id?: string;
+          rating?: number;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'marketplace_reviews_lawyer_id_fkey';
+            columns: ['lawyer_id'];
+            isOneToOne: false;
+            referencedRelation: 'lawyer_profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'marketplace_reviews_marketplace_post_id_fkey';
+            columns: ['marketplace_post_id'];
+            isOneToOne: true;
+            referencedRelation: 'marketplace_posts';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'marketplace_reviews_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       payments: {
         Row: {
           amount_money: number;
@@ -824,6 +1037,102 @@ export type Database = {
           next_expiry: string;
         }[];
       };
+      accept_marketplace_post: {
+        Args: {
+          p_acceptance_public_id: string;
+          p_now?: string;
+          p_public_id: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
+      cancel_marketplace_post: {
+        Args: { p_now?: string; p_public_id: string; p_user_id: string };
+        Returns: Json;
+      };
+      create_marketplace_draft: {
+        Args: {
+          p_idempotency_key: string;
+          p_language: string;
+          p_now?: string;
+          p_public_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          additional_details: string | null;
+          cancelled_at: string | null;
+          channel_message_id: number | null;
+          created_at: string;
+          description: string | null;
+          draft_step: string;
+          expires_at: string | null;
+          id: string;
+          idempotency_key: string;
+          language: string;
+          max_acceptances: number;
+          public_id: string;
+          publish_attempts: number;
+          publish_status: string;
+          published_at: string | null;
+          region: string | null;
+          selected_acceptance_id: string | null;
+          selected_at: string | null;
+          specialization_id: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_posts';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_marketplace_post: {
+        Args: {
+          p_additional_details: string;
+          p_description: string;
+          p_expires_at?: string;
+          p_idempotency_key: string;
+          p_language: string;
+          p_now?: string;
+          p_public_id: string;
+          p_region: string;
+          p_specialization_code: string;
+          p_user_id: string;
+        };
+        Returns: {
+          additional_details: string | null;
+          cancelled_at: string | null;
+          channel_message_id: number | null;
+          created_at: string;
+          description: string | null;
+          draft_step: string;
+          expires_at: string | null;
+          id: string;
+          idempotency_key: string;
+          language: string;
+          max_acceptances: number;
+          public_id: string;
+          publish_attempts: number;
+          publish_status: string;
+          published_at: string | null;
+          region: string | null;
+          selected_acceptance_id: string | null;
+          selected_at: string | null;
+          specialization_id: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_posts';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       credit_balance: {
         Args: { p_now?: string; p_user_id: string };
         Returns: {
@@ -884,6 +1193,7 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      expire_marketplace_posts: { Args: { p_now?: string }; Returns: number };
       grant_accepts: {
         Args: {
           p_amount: number;
@@ -1012,6 +1322,114 @@ export type Database = {
           processed: boolean;
         }[];
       };
+      publish_marketplace_post: {
+        Args: {
+          p_expires_at?: string;
+          p_now?: string;
+          p_public_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          additional_details: string | null;
+          cancelled_at: string | null;
+          channel_message_id: number | null;
+          created_at: string;
+          description: string | null;
+          draft_step: string;
+          expires_at: string | null;
+          id: string;
+          idempotency_key: string;
+          language: string;
+          max_acceptances: number;
+          public_id: string;
+          publish_attempts: number;
+          publish_status: string;
+          published_at: string | null;
+          region: string | null;
+          selected_acceptance_id: string | null;
+          selected_at: string | null;
+          specialization_id: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_posts';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      record_marketplace_publication: {
+        Args: {
+          p_channel_message_id: number;
+          p_now?: string;
+          p_public_id: string;
+        };
+        Returns: {
+          additional_details: string | null;
+          cancelled_at: string | null;
+          channel_message_id: number | null;
+          created_at: string;
+          description: string | null;
+          draft_step: string;
+          expires_at: string | null;
+          id: string;
+          idempotency_key: string;
+          language: string;
+          max_acceptances: number;
+          public_id: string;
+          publish_attempts: number;
+          publish_status: string;
+          published_at: string | null;
+          region: string | null;
+          selected_acceptance_id: string | null;
+          selected_at: string | null;
+          specialization_id: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_posts';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      record_marketplace_publication_failure: {
+        Args: { p_public_id: string };
+        Returns: {
+          additional_details: string | null;
+          cancelled_at: string | null;
+          channel_message_id: number | null;
+          created_at: string;
+          description: string | null;
+          draft_step: string;
+          expires_at: string | null;
+          id: string;
+          idempotency_key: string;
+          language: string;
+          max_acceptances: number;
+          public_id: string;
+          publish_attempts: number;
+          publish_status: string;
+          published_at: string | null;
+          region: string | null;
+          selected_acceptance_id: string | null;
+          selected_at: string | null;
+          specialization_id: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_posts';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       review_lawyer_verification: {
         Args: {
           p_admin_id: string;
@@ -1024,6 +1442,25 @@ export type Database = {
           lawyer_id: string;
           verification_id: string;
         }[];
+      };
+      select_marketplace_lawyer: {
+        Args: {
+          p_acceptance_public_id: string;
+          p_now?: string;
+          p_post_public_id: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
+      submit_marketplace_review: {
+        Args: {
+          p_comment?: string;
+          p_now?: string;
+          p_post_public_id: string;
+          p_rating: number;
+          p_user_id: string;
+        };
+        Returns: Json;
       };
     };
     Enums: {
