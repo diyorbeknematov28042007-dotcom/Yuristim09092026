@@ -305,6 +305,8 @@ function fixture(api = new FakeApi()) {
     apiBaseUrl: 'http://localhost:3001',
     botInfo,
     internalApiSecret: 'test-internal-api-secret-32-characters',
+    marketplaceChannelId: -1000000000001,
+    marketplaceChannelUrl: 'https://t.me/test_marketplace',
     termsVersion: '2026-09',
     token: 'test-token',
     fetch: () => Promise.resolve(new Response(Buffer.from('%PDF-1.4 test'))),

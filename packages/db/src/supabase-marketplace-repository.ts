@@ -42,7 +42,7 @@ function opaque(prefix: 'ma' | 'mp', bytes: number): string {
 const postSelect = `
   *,
   specializations!marketplace_posts_specialization_id_fkey(code,name_uz,name_ru,name_en),
-  marketplace_acceptances(count)
+  marketplace_acceptances!marketplace_acceptances_marketplace_post_id_fkey(count)
 `;
 
 function one(value: any): any {
