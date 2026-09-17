@@ -2,10 +2,9 @@
 
 Yuristim — O‘zbekiston fuqarolari va bizneslari uchun yuridik yordam, huquqiy
 hujjatlar va professional yuristlarni yagona platformada birlashtiruvchi LegalTech
-ekotizimi. Repository Phase 5 doirasida database/core auth foundationi, multilingual
-Telegram Bot, lawyer verification, immutable credits/accept ledgers va provider-neutral
-payment lifecycle'ni o‘z ichiga oladi. Marketplace listinglari va AI keyingi fazalarga
-qoldirilgan.
+ekotizimi. Repository database/core auth, multilingual Telegram Bot, lawyer
+verification, immutable credits/accept ledgers, marketplace va persistent Yuristim AI
+Gateway foundationini o‘z ichiga oladi.
 
 ## Arxitektura
 
@@ -16,6 +15,7 @@ Mini App va Bot Supabase'ga to‘g‘ridan-to‘g‘ri business write qilmaydi:
 Web / Mini App ─┐
 Telegram Bot ───┼──> Fastify API ──> @yuristim/db ──> Supabase/PostgreSQL
 Future Admin ───┘
+                           └────────> @yuristim/ai ──> configured AI provider
 ```
 
 Core auth Telegram identity, bir martalik login challenge, Argon2id PIN va
@@ -25,6 +25,7 @@ server-controlled sessionlardan foydalanadi. Batafsil:
 Lawyer review va deployment: [lawyer verification](docs/lawyer-verification.md),
 [deployment](docs/deployment.md). Credits va payments: [credits](docs/credits.md),
 [payments](docs/payments.md), [marketplace balance](docs/marketplace-balance.md).
+AI routing, charging va streaming: [Yuristim AI](docs/ai.md).
 
 ## Monorepo strukturasi
 
@@ -35,7 +36,7 @@ Lawyer review va deployment: [lawyer verification](docs/lawyer-verification.md),
 │   ├── bot/       # grammY transport adapteri
 │   └── web/       # Next.js App Router
 ├── packages/
-│   ├── ai/        # Kelajakdagi AI Gateway boundary
+│   ├── ai/        # AI Gateway, provider adapterlar, pricing va policy
 │   ├── config/    # Typed environment helpers
 │   ├── db/        # Supabase client va repository boundary
 │   ├── types/     # Shared TypeScript contractlar
@@ -57,7 +58,7 @@ Lawyer review va deployment: [lawyer verification](docs/lawyer-verification.md),
 ```bash
 git clone https://github.com/diyorbeknematov28042007-dotcom/Yuristim09092026.git
 cd Yuristim09092026
-git checkout phase/05-credits-payments
+git checkout phase/07-yuristim-ai
 corepack enable
 pnpm install --frozen-lockfile
 ```
@@ -78,6 +79,10 @@ xavfsiz bootstrap qilish zarur bo‘lganda juft holda beriladi. Bot uchun
 `SUPPORT_USERNAME` faqat real qiymat mavjud bo‘lganda beriladi. Secretlar faqat
 local/hosting environmentida saqlanadi; `NEXT_PUBLIC_*`dan boshqa qiymat browser
 bundle'ga kiritilmaydi.
+
+Tezkor AI uchun API service'da `GEMINI_API_KEY`; Ekspert uchun kamida
+`OPENAI_API_KEY` yoki `ANTHROPIC_API_KEY` kerak. Provider/model/pricing runtime
+sozlamalari `.env.example`da markazlashtirilgan. Bot provider secretlarini olmaydi.
 
 ## Development
 
@@ -119,11 +124,13 @@ supabase test db
   public profil route'i.
 - **API:** health/readiness, Core User API, Telegram auth challenge, PIN,
   HttpOnly session, lawyer verification/admin review va HMAC-protected Bot
-  endpointlari; credits, accept balances va sandbox payment lifecycle.
+  endpointlari; credits, accept balances, marketplace, AI conversation/streaming va
+  sandbox payment lifecycle.
 - **Bot:** grammY transport; `/start`, persistent onboarding, uch tilli RK/IK,
   settings/profile, persistent lawyer verification, multi-specialization, private
-  fayl upload, mode switch va real balans/tariflar UX. Barcha business state imzolangan
-  internal API orqali yuradi; database'ga bevosita kirmaydi.
+  fayl upload, marketplace, persistent AI chat, mode switch va real balans/tariflar
+  UX. Barcha business state imzolangan internal API orqali yuradi; database'ga
+  bevosita kirmaydi.
 
 ## Deployment
 
