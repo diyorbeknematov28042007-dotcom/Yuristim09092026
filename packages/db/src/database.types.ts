@@ -123,6 +123,235 @@ export type Database = {
           },
         ];
       };
+      ai_conversations: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          id: string;
+          last_message_at: string | null;
+          mode: string;
+          public_id: string;
+          status: string;
+          system_prompt_version: string;
+          title: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          id?: string;
+          last_message_at?: string | null;
+          mode?: string;
+          public_id?: string;
+          status?: string;
+          system_prompt_version: string;
+          title?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          id?: string;
+          last_message_at?: string | null;
+          mode?: string;
+          public_id?: string;
+          status?: string;
+          system_prompt_version?: string;
+          title?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'ai_conversations_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      ai_message_sources: {
+        Row: {
+          citation_order: number;
+          created_at: string;
+          domain: string | null;
+          id: string;
+          is_official: boolean;
+          message_id: string;
+          metadata: Json;
+          publisher: string | null;
+          source_type: string;
+          title: string;
+          url: string;
+          verified: boolean;
+        };
+        Insert: {
+          citation_order: number;
+          created_at?: string;
+          domain?: string | null;
+          id?: string;
+          is_official?: boolean;
+          message_id: string;
+          metadata?: Json;
+          publisher?: string | null;
+          source_type: string;
+          title: string;
+          url: string;
+          verified?: boolean;
+        };
+        Update: {
+          citation_order?: number;
+          created_at?: string;
+          domain?: string | null;
+          id?: string;
+          is_official?: boolean;
+          message_id?: string;
+          metadata?: Json;
+          publisher?: string | null;
+          source_type?: string;
+          title?: string;
+          url?: string;
+          verified?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'ai_message_sources_message_id_fkey';
+            columns: ['message_id'];
+            isOneToOne: false;
+            referencedRelation: 'ai_messages';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      ai_messages: {
+        Row: {
+          charged_credits: number;
+          completed_at: string | null;
+          content: string;
+          conversation_id: string;
+          created_at: string;
+          error_code: string | null;
+          id: string;
+          idempotency_key: string | null;
+          input_tokens: number | null;
+          mode: string;
+          model: string | null;
+          output_tokens: number | null;
+          provider: string | null;
+          provider_cost_usd: number | null;
+          public_id: string;
+          refunded_credits: number;
+          request_message_id: string | null;
+          role: string;
+          source_status: string;
+          status: string;
+          system_prompt_version: string;
+        };
+        Insert: {
+          charged_credits?: number;
+          completed_at?: string | null;
+          content?: string;
+          conversation_id: string;
+          created_at?: string;
+          error_code?: string | null;
+          id?: string;
+          idempotency_key?: string | null;
+          input_tokens?: number | null;
+          mode: string;
+          model?: string | null;
+          output_tokens?: number | null;
+          provider?: string | null;
+          provider_cost_usd?: number | null;
+          public_id?: string;
+          refunded_credits?: number;
+          request_message_id?: string | null;
+          role: string;
+          source_status?: string;
+          status: string;
+          system_prompt_version: string;
+        };
+        Update: {
+          charged_credits?: number;
+          completed_at?: string | null;
+          content?: string;
+          conversation_id?: string;
+          created_at?: string;
+          error_code?: string | null;
+          id?: string;
+          idempotency_key?: string | null;
+          input_tokens?: number | null;
+          mode?: string;
+          model?: string | null;
+          output_tokens?: number | null;
+          provider?: string | null;
+          provider_cost_usd?: number | null;
+          public_id?: string;
+          refunded_credits?: number;
+          request_message_id?: string | null;
+          role?: string;
+          source_status?: string;
+          status?: string;
+          system_prompt_version?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'ai_messages_conversation_id_fkey';
+            columns: ['conversation_id'];
+            isOneToOne: false;
+            referencedRelation: 'ai_conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'ai_messages_request_message_id_fkey';
+            columns: ['request_message_id'];
+            isOneToOne: true;
+            referencedRelation: 'ai_messages';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      ai_user_states: {
+        Row: {
+          active_conversation_id: string | null;
+          bot_chat_active: boolean;
+          preferred_mode: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          active_conversation_id?: string | null;
+          bot_chat_active?: boolean;
+          preferred_mode?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          active_conversation_id?: string | null;
+          bot_chat_active?: boolean;
+          preferred_mode?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'ai_user_states_active_conversation_id_fkey';
+            columns: ['active_conversation_id'];
+            isOneToOne: false;
+            referencedRelation: 'ai_conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'ai_user_states_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       audit_logs: {
         Row: {
           action: string;
@@ -1046,9 +1275,93 @@ export type Database = {
         };
         Returns: Json;
       };
+      begin_ai_message: {
+        Args: {
+          p_content: string;
+          p_conversation_id: string;
+          p_idempotency_key: string;
+          p_mode: string;
+          p_model: string;
+          p_now?: string;
+          p_provider: string;
+          p_streaming?: boolean;
+          p_system_prompt_version: string;
+          p_title: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       cancel_marketplace_post: {
         Args: { p_now?: string; p_public_id: string; p_user_id: string };
         Returns: Json;
+      };
+      complete_ai_message: {
+        Args: {
+          p_charged_credits: number;
+          p_content: string;
+          p_input_tokens: number;
+          p_message_id: string;
+          p_now?: string;
+          p_output_tokens: number;
+          p_provider_cost_usd: number;
+          p_user_id: string;
+        };
+        Returns: {
+          charged_credits: number;
+          completed_at: string | null;
+          content: string;
+          conversation_id: string;
+          created_at: string;
+          error_code: string | null;
+          id: string;
+          idempotency_key: string | null;
+          input_tokens: number | null;
+          mode: string;
+          model: string | null;
+          output_tokens: number | null;
+          provider: string | null;
+          provider_cost_usd: number | null;
+          public_id: string;
+          refunded_credits: number;
+          request_message_id: string | null;
+          role: string;
+          source_status: string;
+          status: string;
+          system_prompt_version: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_messages';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_ai_conversation: {
+        Args: {
+          p_mode: string;
+          p_now?: string;
+          p_system_prompt_version: string;
+          p_user_id: string;
+        };
+        Returns: {
+          archived_at: string | null;
+          created_at: string;
+          id: string;
+          last_message_at: string | null;
+          mode: string;
+          public_id: string;
+          status: string;
+          system_prompt_version: string;
+          title: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_conversations';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       create_marketplace_draft: {
         Args: {
@@ -1194,6 +1507,44 @@ export type Database = {
         };
       };
       expire_marketplace_posts: { Args: { p_now?: string }; Returns: number };
+      fail_ai_message: {
+        Args: {
+          p_cancelled?: boolean;
+          p_error_code: string;
+          p_message_id: string;
+          p_now?: string;
+          p_user_id: string;
+        };
+        Returns: {
+          charged_credits: number;
+          completed_at: string | null;
+          content: string;
+          conversation_id: string;
+          created_at: string;
+          error_code: string | null;
+          id: string;
+          idempotency_key: string | null;
+          input_tokens: number | null;
+          mode: string;
+          model: string | null;
+          output_tokens: number | null;
+          provider: string | null;
+          provider_cost_usd: number | null;
+          public_id: string;
+          refunded_credits: number;
+          request_message_id: string | null;
+          role: string;
+          source_status: string;
+          status: string;
+          system_prompt_version: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_messages';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       grant_accepts: {
         Args: {
           p_amount: number;
@@ -1426,6 +1777,38 @@ export type Database = {
         SetofOptions: {
           from: '*';
           to: 'marketplace_posts';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      reverse_ai_delivery_charge: {
+        Args: { p_message_id: string; p_now?: string; p_user_id: string };
+        Returns: {
+          charged_credits: number;
+          completed_at: string | null;
+          content: string;
+          conversation_id: string;
+          created_at: string;
+          error_code: string | null;
+          id: string;
+          idempotency_key: string | null;
+          input_tokens: number | null;
+          mode: string;
+          model: string | null;
+          output_tokens: number | null;
+          provider: string | null;
+          provider_cost_usd: number | null;
+          public_id: string;
+          refunded_credits: number;
+          request_message_id: string | null;
+          role: string;
+          source_status: string;
+          status: string;
+          system_prompt_version: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_messages';
           isOneToOne: true;
           isSetofReturn: false;
         };
