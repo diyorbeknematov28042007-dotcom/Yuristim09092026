@@ -1,14 +1,17 @@
 import {
   AiGateway,
+  InMemoryAiProviderStateStore,
   AiProviderError,
   type AiModelConfig,
   type AiProviderAdapter,
+  type AiProviderName,
 } from '@yuristim/ai';
 import type {
   AiBeginMessageResult,
   AiConversationRow,
   AiMessageRow,
   AiMessageSourceRow,
+  AiProviderAttemptRow,
   AiRepository,
   AiUserStateRow,
 } from '@yuristim/db';
@@ -21,7 +24,7 @@ const now = new Date('2026-09-17T08:00:00.000Z');
 const userA = '00000000-0000-4000-8000-000000000001';
 const userB = '00000000-0000-4000-8000-000000000002';
 
-function model(mode: 'fast' | 'expert', provider: 'gemini' | 'openai'): AiModelConfig {
+function model(mode: 'fast' | 'expert', provider: AiProviderName): AiModelConfig {
   return {
     contextLimit: 8_000,
     enabled: true,
@@ -41,6 +44,7 @@ function model(mode: 'fast' | 'expert', provider: 'gemini' | 'openai'): AiModelC
 class MemoryAiRepository implements AiRepository {
   conversations: AiConversationRow[] = [];
   messages: AiMessageRow[] = [];
+  attempts: AiProviderAttemptRow[] = [];
   sources: AiMessageSourceRow[] = [];
   states = new Map<string, AiUserStateRow>();
   private sequence = 0;
@@ -201,6 +205,35 @@ class MemoryAiRepository implements AiRepository {
     return row;
   }
 
+  async routeMessage(input: Parameters<AiRepository['routeMessage']>[0]): Promise<AiMessageRow> {
+    const row = this.messages.find((item) => item.id === input.messageId)!;
+    row.provider = input.provider;
+    row.model = input.model;
+    return row;
+  }
+
+  recordProviderAttempt(
+    input: Parameters<AiRepository['recordProviderAttempt']>[0],
+  ): Promise<AiProviderAttemptRow> {
+    const row: AiProviderAttemptRow = {
+      attempt_number: input.attemptNumber,
+      completed_at: input.completedAt.toISOString(),
+      created_at: input.completedAt.toISOString(),
+      error_category: input.errorCategory ?? null,
+      id: this.id(),
+      input_tokens: input.inputTokens ?? null,
+      latency_ms: input.latencyMilliseconds,
+      message_id: input.messageId,
+      model: input.model,
+      output_tokens: input.outputTokens ?? null,
+      provider: input.provider,
+      started_at: input.startedAt.toISOString(),
+      status: input.status,
+    };
+    this.attempts.push(row);
+    return Promise.resolve(row);
+  }
+
   async failMessage(input: Parameters<AiRepository['failMessage']>[0]): Promise<AiMessageRow> {
     const row = this.messages.find((item) => item.id === input.messageId)!;
     Object.assign(row, {
@@ -285,8 +318,17 @@ function fixture(options: { balance?: number; providerFailure?: AiProviderError 
   });
   const gateway = new AiGateway({
     adapters: [provider('gemini'), provider('openai')],
+    circuitBreaker: {
+      cooldownSeconds: 300,
+      failureThreshold: 3,
+      failureWindowSeconds: 120,
+      halfOpenLeaseSeconds: 30,
+      maxCooldownSeconds: 1_800,
+    },
+    expertRouting: { fixedProvider: 'openai', mode: 'fixed', order: ['openai'] },
     maxRetries: 0,
     models: [model('fast', 'gemini'), model('expert', 'openai')],
+    providerStateStore: new InMemoryAiProviderStateStore(),
     timeoutMilliseconds: 100,
   });
   const balance = options.balance ?? 50;
@@ -377,6 +419,143 @@ describe('AiService conversation and charging lifecycle', () => {
     });
   });
 
+  it('charges exactly once for the final successful provider after Expert failover', async () => {
+    const repository = new MemoryAiRepository();
+    const bai = vi.fn().mockRejectedValue(new AiProviderError('timeout', false));
+    const openai = vi.fn().mockResolvedValue({
+      content: 'OpenAI final answer',
+      usage: { inputTokens: 1_000, outputTokens: 1_000 },
+    });
+    const gateway = new AiGateway({
+      adapters: [
+        {
+          configured: true,
+          generate: bai,
+          name: 'bai',
+          stream: vi.fn(),
+          supportsStreaming: true,
+        },
+        {
+          configured: true,
+          generate: openai,
+          name: 'openai',
+          stream: vi.fn(),
+          supportsStreaming: true,
+        },
+      ],
+      circuitBreaker: {
+        cooldownSeconds: 300,
+        failureThreshold: 3,
+        failureWindowSeconds: 120,
+        halfOpenLeaseSeconds: 30,
+        maxCooldownSeconds: 1_800,
+      },
+      expertRouting: { mode: 'auto', order: ['bai', 'openai', 'anthropic'] },
+      maxRetries: 0,
+      models: [
+        model('fast', 'gemini'),
+        model('expert', 'bai'),
+        model('expert', 'openai'),
+        model('expert', 'anthropic'),
+      ],
+      providerStateStore: new InMemoryAiProviderStateStore(),
+      timeoutMilliseconds: 100,
+    });
+    const credits = {
+      getBalance: vi.fn().mockResolvedValue({
+        bonus: 50,
+        lowBalance: false,
+        nextExpiry: null,
+        paid: 0,
+        total: 50,
+        weekly: 0,
+        zeroBalance: false,
+      }),
+    } as unknown as CreditService;
+    const complete = vi.spyOn(repository, 'completeMessage');
+    const service = new AiService(repository, gateway, credits, () => now);
+    const conversation = await service.createConversation(userA, 'uz', 'expert');
+    const result = await service.send({
+      content: 'Murakkab huquqiy savol',
+      conversationId: conversation.id,
+      idempotencyKey: 'request-expert-failover',
+      language: 'uz',
+      requestId: 'req-expert-failover',
+      userId: userA,
+    });
+    expect(result.message.status).toBe('completed');
+    expect(complete).toHaveBeenCalledOnce();
+    expect(repository.attempts.map((attempt) => [attempt.provider, attempt.status])).toEqual([
+      ['bai', 'failed'],
+      ['openai', 'succeeded'],
+    ]);
+    expect(repository.messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(repository.messages.find((message) => message.role === 'assistant')).toMatchObject({
+      provider: 'openai',
+      status: 'completed',
+    });
+  });
+
+  it('charges zero and persists one failed assistant when all Expert providers fail', async () => {
+    const repository = new MemoryAiRepository();
+    const adapters = (['bai', 'openai', 'anthropic'] as const).map((name): AiProviderAdapter => ({
+      configured: true,
+      generate: vi.fn().mockRejectedValue(new AiProviderError('unavailable', false)),
+      name,
+      stream: vi.fn(),
+      supportsStreaming: true,
+    }));
+    const gateway = new AiGateway({
+      adapters,
+      circuitBreaker: {
+        cooldownSeconds: 300,
+        failureThreshold: 3,
+        failureWindowSeconds: 120,
+        halfOpenLeaseSeconds: 30,
+        maxCooldownSeconds: 1_800,
+      },
+      expertRouting: { mode: 'auto', order: ['bai', 'openai', 'anthropic'] },
+      maxRetries: 0,
+      models: [
+        model('fast', 'gemini'),
+        model('expert', 'bai'),
+        model('expert', 'openai'),
+        model('expert', 'anthropic'),
+      ],
+      providerStateStore: new InMemoryAiProviderStateStore(),
+      timeoutMilliseconds: 100,
+    });
+    const credits = {
+      getBalance: vi.fn().mockResolvedValue({
+        bonus: 50,
+        lowBalance: false,
+        nextExpiry: null,
+        paid: 0,
+        total: 50,
+        weekly: 0,
+        zeroBalance: false,
+      }),
+    } as unknown as CreditService;
+    const complete = vi.spyOn(repository, 'completeMessage');
+    const service = new AiService(repository, gateway, credits, () => now);
+    const conversation = await service.createConversation(userA, 'uz', 'expert');
+    await expect(
+      service.send({
+        content: 'Barcha provider muvaffaqiyatsiz',
+        conversationId: conversation.id,
+        idempotencyKey: 'request-all-failed',
+        language: 'uz',
+        requestId: 'req-all-failed',
+        userId: userA,
+      }),
+    ).rejects.toMatchObject({ code: 'AI_PROVIDER_UNAVAILABLE' });
+    expect(complete).not.toHaveBeenCalled();
+    expect(repository.attempts).toHaveLength(3);
+    expect(repository.messages.filter((message) => message.role === 'assistant')).toEqual([
+      expect.objectContaining({ charged_credits: 0, status: 'failed' }),
+    ]);
+  });
+
   it('persists an incomplete stream as failed with no charge', async () => {
     const repository = new MemoryAiRepository();
     const stream = vi.fn(async (_request, onDelta: (delta: string) => Promise<void>) => {
@@ -392,8 +571,17 @@ describe('AiService conversation and charging lifecycle', () => {
     };
     const gateway = new AiGateway({
       adapters: [adapter],
+      circuitBreaker: {
+        cooldownSeconds: 300,
+        failureThreshold: 3,
+        failureWindowSeconds: 120,
+        halfOpenLeaseSeconds: 30,
+        maxCooldownSeconds: 1_800,
+      },
+      expertRouting: { fixedProvider: 'openai', mode: 'fixed', order: ['openai'] },
       maxRetries: 2,
       models: [model('fast', 'gemini'), model('expert', 'openai')],
+      providerStateStore: new InMemoryAiProviderStateStore(),
       timeoutMilliseconds: 100,
       wait: () => Promise.resolve(),
     });

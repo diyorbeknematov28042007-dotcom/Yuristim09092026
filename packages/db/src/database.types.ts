@@ -313,6 +313,104 @@ export type Database = {
           },
         ];
       };
+      ai_provider_attempts: {
+        Row: {
+          attempt_number: number;
+          completed_at: string;
+          created_at: string;
+          error_category: string | null;
+          id: string;
+          input_tokens: number | null;
+          latency_ms: number;
+          message_id: string;
+          model: string;
+          output_tokens: number | null;
+          provider: string;
+          started_at: string;
+          status: string;
+        };
+        Insert: {
+          attempt_number: number;
+          completed_at: string;
+          created_at?: string;
+          error_category?: string | null;
+          id?: string;
+          input_tokens?: number | null;
+          latency_ms: number;
+          message_id: string;
+          model: string;
+          output_tokens?: number | null;
+          provider: string;
+          started_at: string;
+          status: string;
+        };
+        Update: {
+          attempt_number?: number;
+          completed_at?: string;
+          created_at?: string;
+          error_category?: string | null;
+          id?: string;
+          input_tokens?: number | null;
+          latency_ms?: number;
+          message_id?: string;
+          model?: string;
+          output_tokens?: number | null;
+          provider?: string;
+          started_at?: string;
+          status?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'ai_provider_attempts_message_id_fkey';
+            columns: ['message_id'];
+            isOneToOne: false;
+            referencedRelation: 'ai_messages';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      ai_provider_runtime_state: {
+        Row: {
+          circuit_state: string;
+          consecutive_failures: number;
+          cooldown_seconds: number;
+          failure_window_started_at: string | null;
+          last_error_category: string | null;
+          last_failure_at: string | null;
+          last_success_at: string | null;
+          manual_enabled: boolean;
+          paused_until: string | null;
+          provider: string;
+          updated_at: string;
+        };
+        Insert: {
+          circuit_state?: string;
+          consecutive_failures?: number;
+          cooldown_seconds?: number;
+          failure_window_started_at?: string | null;
+          last_error_category?: string | null;
+          last_failure_at?: string | null;
+          last_success_at?: string | null;
+          manual_enabled?: boolean;
+          paused_until?: string | null;
+          provider: string;
+          updated_at?: string;
+        };
+        Update: {
+          circuit_state?: string;
+          consecutive_failures?: number;
+          cooldown_seconds?: number;
+          failure_window_started_at?: string | null;
+          last_error_category?: string | null;
+          last_failure_at?: string | null;
+          last_success_at?: string | null;
+          manual_enabled?: boolean;
+          paused_until?: string | null;
+          provider?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       ai_user_states: {
         Row: {
           active_conversation_id: string | null;
@@ -1275,6 +1373,14 @@ export type Database = {
         };
         Returns: Json;
       };
+      acquire_ai_provider: {
+        Args: {
+          p_half_open_lease_seconds: number;
+          p_now?: string;
+          p_provider: string;
+        };
+        Returns: Json;
+      };
       begin_ai_message: {
         Args: {
           p_content: string;
@@ -1711,6 +1817,63 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      record_ai_provider_failure: {
+        Args: {
+          p_base_cooldown_seconds: number;
+          p_error_category: string;
+          p_failure_threshold: number;
+          p_failure_window_seconds: number;
+          p_max_cooldown_seconds: number;
+          p_now?: string;
+          p_provider: string;
+          p_retry_after_seconds?: number;
+        };
+        Returns: {
+          circuit_state: string;
+          consecutive_failures: number;
+          cooldown_seconds: number;
+          failure_window_started_at: string | null;
+          last_error_category: string | null;
+          last_failure_at: string | null;
+          last_success_at: string | null;
+          manual_enabled: boolean;
+          paused_until: string | null;
+          provider: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_provider_runtime_state';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      record_ai_provider_success: {
+        Args: {
+          p_base_cooldown_seconds: number;
+          p_now?: string;
+          p_provider: string;
+        };
+        Returns: {
+          circuit_state: string;
+          consecutive_failures: number;
+          cooldown_seconds: number;
+          failure_window_started_at: string | null;
+          last_error_category: string | null;
+          last_failure_at: string | null;
+          last_success_at: string | null;
+          manual_enabled: boolean;
+          paused_until: string | null;
+          provider: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_provider_runtime_state';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       record_marketplace_publication: {
         Args: {
           p_channel_message_id: number;
@@ -1825,6 +1988,44 @@ export type Database = {
           lawyer_id: string;
           verification_id: string;
         }[];
+      };
+      route_ai_message: {
+        Args: {
+          p_message_id: string;
+          p_model: string;
+          p_now?: string;
+          p_provider: string;
+          p_user_id: string;
+        };
+        Returns: {
+          charged_credits: number;
+          completed_at: string | null;
+          content: string;
+          conversation_id: string;
+          created_at: string;
+          error_code: string | null;
+          id: string;
+          idempotency_key: string | null;
+          input_tokens: number | null;
+          mode: string;
+          model: string | null;
+          output_tokens: number | null;
+          provider: string | null;
+          provider_cost_usd: number | null;
+          public_id: string;
+          refunded_credits: number;
+          request_message_id: string | null;
+          role: string;
+          source_status: string;
+          status: string;
+          system_prompt_version: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'ai_messages';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       select_marketplace_lawyer: {
         Args: {

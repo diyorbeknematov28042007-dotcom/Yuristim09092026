@@ -4,21 +4,26 @@ import {
   type AiProviderAdapter,
   type AiProviderRequest,
   type AiProviderResponse,
+  type AiThinkingLevel,
 } from './types.js';
 
 interface GeminiAdapterOptions {
   apiKey?: string | undefined;
   model: string;
+  thinkingLevel: AiThinkingLevel;
   fetch?: typeof fetch;
 }
 
-function requestBody(request: AiProviderRequest) {
+function requestBody(request: AiProviderRequest, thinkingLevel: AiThinkingLevel) {
   return {
     contents: request.messages.map((message) => ({
       parts: [{ text: message.content }],
       role: message.role === 'assistant' ? 'model' : 'user',
     })),
-    generationConfig: { maxOutputTokens: request.maxOutputTokens },
+    generationConfig: {
+      maxOutputTokens: request.maxOutputTokens,
+      thinkingConfig: { thinkingLevel },
+    },
     systemInstruction: { parts: [{ text: request.systemPrompt }] },
   };
 }
@@ -110,7 +115,7 @@ export class GeminiAdapter implements AiProviderAdapter {
     const response = await this.fetchImplementation(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.options.model)}:${action}`,
       {
-        body: JSON.stringify(requestBody(request)),
+        body: JSON.stringify(requestBody(request, this.options.thinkingLevel)),
         headers: {
           'content-type': 'application/json',
           'x-goog-api-key': this.options.apiKey,

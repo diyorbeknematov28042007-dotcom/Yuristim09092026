@@ -7,7 +7,8 @@ HTTP/SSE yoki Bot HMAC request
   → AiService
   → context + versioned system policy
   → AiGateway mode router
-  → provider adapter
+  → shared circuit breaker
+  → provider adapter/failover attempt
   → normalized content + usage
   → atomic message completion + credit ledger debit
 ```
@@ -20,13 +21,36 @@ error, internal UUID, pricing internals yoki system promptni bermaydi.
 
 - `fast`: faqat Gemini. Same-provider transient retry bounded; boshqa providerga
   fallback yo‘q.
-- `expert`: `AI_EXPERT_PROVIDER` bilan OpenAI yoki Anthropic. Provider nomi UX'da
-  yashirin.
+- `expert/auto`: enabled, configured va healthy providerlar orasida
+  `AI_EXPERT_PROVIDER_ORDER` (`bai,openai,anthropic`) tartibida failover. B.AI
+  OpenAI-compatible Responses transportini reuse qiladi, lekin metadata'da `bai`
+  sifatida saqlanadi.
+- `expert/fixed`: `AI_EXPERT_PROVIDER_MODE=fixed` va `AI_EXPERT_PROVIDER` bilan
+  faqat tanlangan B.AI, OpenAI yoki Anthropic ishlaydi; cross-provider fallback yo'q.
+  Backward compatibility uchun eski deployment'da faqat `AI_EXPERT_PROVIDER` mavjud
+  bo‘lsa ham u fixed routing deb talqin qilinadi. Yangi deployment mode'ni explicit
+  belgilashi kerak.
 
 Model, token pricing, markup, context va timeout `.env.example`dagi `AI_*`
 variable'lar bilan markazdan boshqariladi. `/ready` Fast/Expert availability'ni
 sanitized boolean sifatida ko‘rsatadi, lekin optional provider yo‘qligi butun API'ni
 down qilmaydi.
+
+Provider kill-switch'lari `AI_PROVIDER_*_ENABLED`; shared runtime state esa
+`ai_provider_runtime_state` jadvalida saqlanadi. Threshold ichidagi timeout, network,
+5xx, malformed response, 429 yoki auth/config failure circuit'ni `OPEN` qiladi.
+Cooldown'dan keyin bitta `HALF_OPEN` probe ishlaydi. `ai_provider_attempts` har bir
+internal urinishni saqlaydi, ammo public API'da expose qilinmaydi. Failover attempt
+charge qilmaydi; faqat yakuniy successful provider usage'i bo‘yicha bitta debit bor.
+Streaming'da biror delta yuborilgach cross-provider failover to‘xtaydi, shuning uchun
+bitta javobda provider outputlari aralashmaydi.
+
+Provider-specific inference mapping:
+
+- Gemini `gemini-3.8-flash`: `thinkingConfig.thinkingLevel=low`;
+- B.AI `DeepSeek-V4.1-Flash`: Responses API `reasoning.effort=high`;
+- OpenAI `gpt-5.6-sol`: Responses API `reasoning.effort=high`;
+- Anthropic `claude-opus-5`: adaptive thinking va `output_config.effort=high`.
 
 ## Persistence va context
 

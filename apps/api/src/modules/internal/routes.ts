@@ -218,6 +218,11 @@ export function registerInternalRoutes(
   }
 
   if (aiService) {
+    app.get('/internal/ai/providers/status', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      return { providers: await aiService.providerStatus() };
+    });
+
     app.post('/internal/telegram/users/:telegramUserId/ai/enter', async (request) => {
       verifyInternalRequest(request, request.body, internalBotSecret);
       const params = parseInput(

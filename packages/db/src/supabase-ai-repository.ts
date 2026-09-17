@@ -8,6 +8,10 @@ import {
   type AiConversationRow,
   type AiMessageRow,
   type AiMessageSourceRow,
+  type AiProviderErrorCategory,
+  type AiProviderName,
+  type AiProviderRuntimeState,
+  type AiProviderRuntimeStateRow,
   type AiRepository,
   type AiUserStateRow,
 } from './ai-repository.js';
@@ -44,6 +48,21 @@ function beginResult(value: Json): AiBeginMessageResult {
     assistantMessage: object(result.assistantMessage) as unknown as AiMessageRow,
     duplicate: result.duplicate,
     userMessage: object(result.userMessage) as unknown as AiMessageRow,
+  };
+}
+
+function runtimeState(row: AiProviderRuntimeStateRow): AiProviderRuntimeState {
+  return {
+    circuitState: row.circuit_state as AiProviderRuntimeState['circuitState'],
+    consecutiveFailures: row.consecutive_failures,
+    cooldownSeconds: row.cooldown_seconds,
+    failureWindowStartedAt: row.failure_window_started_at,
+    lastErrorCategory: row.last_error_category as AiProviderErrorCategory | null,
+    lastFailureAt: row.last_failure_at,
+    lastSuccessAt: row.last_success_at,
+    manualEnabled: row.manual_enabled,
+    pausedUntil: row.paused_until,
+    provider: row.provider as AiProviderName,
   };
 }
 
@@ -183,6 +202,106 @@ export class SupabaseAiRepository implements AiRepository {
       p_user_id: input.userId,
     });
     return beginResult(required(data, error));
+  }
+
+  async routeMessage(input: Parameters<AiRepository['routeMessage']>[0]): Promise<AiMessageRow> {
+    const { data, error } = await this.client.rpc('route_ai_message', {
+      p_message_id: input.messageId,
+      p_model: input.model,
+      p_now: input.now.toISOString(),
+      p_provider: input.provider,
+      p_user_id: input.userId,
+    });
+    return required(data, error);
+  }
+
+  async recordProviderAttempt(input: Parameters<AiRepository['recordProviderAttempt']>[0]) {
+    const { data, error } = await this.client
+      .from('ai_provider_attempts')
+      .insert({
+        attempt_number: input.attemptNumber,
+        completed_at: input.completedAt.toISOString(),
+        error_category: input.errorCategory ?? null,
+        input_tokens: input.inputTokens ?? null,
+        latency_ms: input.latencyMilliseconds,
+        message_id: input.messageId,
+        model: input.model,
+        output_tokens: input.outputTokens ?? null,
+        provider: input.provider,
+        started_at: input.startedAt.toISOString(),
+        status: input.status,
+      })
+      .select('*')
+      .single();
+    return required(data, error);
+  }
+
+  async getProviderState(provider: AiProviderName): Promise<AiProviderRuntimeState | null> {
+    const { data, error } = await this.client
+      .from('ai_provider_runtime_state')
+      .select('*')
+      .eq('provider', provider)
+      .maybeSingle();
+    if (error) fail(error);
+    return data ? runtimeState(data) : null;
+  }
+
+  async acquireProvider(input: {
+    provider: AiProviderName;
+    now: Date;
+    halfOpenLeaseSeconds: number;
+  }): Promise<{ allowed: boolean; state: AiProviderRuntimeState }> {
+    const { data, error } = await this.client.rpc('acquire_ai_provider', {
+      p_half_open_lease_seconds: input.halfOpenLeaseSeconds,
+      p_now: input.now.toISOString(),
+      p_provider: input.provider,
+    });
+    const result = object(required(data, error));
+    if (typeof result.allowed !== 'boolean' || !result.state) {
+      throw new Error('Database returned malformed AI provider acquisition');
+    }
+    return {
+      allowed: result.allowed,
+      state: runtimeState(object(result.state) as unknown as AiProviderRuntimeStateRow),
+    };
+  }
+
+  async recordProviderSuccess(input: {
+    provider: AiProviderName;
+    now: Date;
+    baseCooldownSeconds: number;
+  }): Promise<AiProviderRuntimeState> {
+    const { data, error } = await this.client.rpc('record_ai_provider_success', {
+      p_base_cooldown_seconds: input.baseCooldownSeconds,
+      p_now: input.now.toISOString(),
+      p_provider: input.provider,
+    });
+    return runtimeState(required(data, error));
+  }
+
+  async recordProviderFailure(input: {
+    provider: AiProviderName;
+    category: AiProviderErrorCategory;
+    now: Date;
+    failureThreshold: number;
+    failureWindowSeconds: number;
+    baseCooldownSeconds: number;
+    maxCooldownSeconds: number;
+    retryAfterSeconds?: number | undefined;
+  }): Promise<AiProviderRuntimeState> {
+    const { data, error } = await this.client.rpc('record_ai_provider_failure', {
+      p_base_cooldown_seconds: input.baseCooldownSeconds,
+      p_error_category: input.category,
+      p_failure_threshold: input.failureThreshold,
+      p_failure_window_seconds: input.failureWindowSeconds,
+      p_max_cooldown_seconds: input.maxCooldownSeconds,
+      p_now: input.now.toISOString(),
+      p_provider: input.provider,
+      ...(input.retryAfterSeconds === undefined
+        ? {}
+        : { p_retry_after_seconds: input.retryAfterSeconds }),
+    });
+    return runtimeState(required(data, error));
   }
 
   async completeMessage(

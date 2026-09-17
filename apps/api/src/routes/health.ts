@@ -4,7 +4,8 @@ import type { FastifyInstance } from 'fastify';
 
 export async function healthRoutes(
   app: FastifyInstance,
-  aiAvailability?: () => Record<'fast' | 'expert', boolean>,
+  aiAvailability?: () =>
+    Record<'fast' | 'expert', boolean> | Promise<Record<'fast' | 'expert', boolean>>,
 ): Promise<void> {
   app.get('/health', async (request): Promise<ServiceHealthResponse> => {
     return {
@@ -16,7 +17,7 @@ export async function healthRoutes(
 
   app.get('/ready', async (request): Promise<ServiceHealthResponse> => {
     return {
-      ...(aiAvailability ? { dependencies: { ai: aiAvailability() } } : {}),
+      ...(aiAvailability ? { dependencies: { ai: await aiAvailability() } } : {}),
       status: 'ready',
       service: SERVICE_NAMES.api,
       requestId: request.id,

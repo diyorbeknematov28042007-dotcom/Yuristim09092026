@@ -57,7 +57,13 @@ function fixture() {
   const auth = { getTelegramUserForInternal } as unknown as CoreAuthService;
   const send = vi.fn().mockResolvedValue(sendResult);
   const ai = {
-    availability: () => ({ expert: true, fast: true }),
+    availability: async () => ({ expert: true, fast: true }),
+    providerStatus: vi.fn().mockResolvedValue({
+      anthropic: { configured: false, enabled: true, state: 'ACTIVE' },
+      bai: { configured: true, enabled: true, state: 'ACTIVE' },
+      gemini: { configured: false, enabled: true, state: 'ACTIVE' },
+      openai: { configured: false, enabled: true, state: 'OPEN' },
+    }),
     send,
     status: vi.fn().mockResolvedValue(status),
   } as unknown as AiService;
@@ -101,6 +107,18 @@ describe('AI internal bot routes', () => {
     expect(getTelegramUserForInternal).toHaveBeenCalledWith(telegramUserId);
   });
 
+  it('keeps /ready healthy while reporting sanitized partial AI availability', async () => {
+    const { app, ai } = fixture();
+    apps.push(app);
+    vi.spyOn(ai, 'availability').mockResolvedValue({ expert: true, fast: false });
+    const response = await app.inject({ method: 'GET', url: '/ready' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      dependencies: { ai: { expert: true, fast: false } },
+      status: 'ready',
+    });
+  });
+
   it('rejects an invalid HMAC before resolving the Telegram user', async () => {
     const { app, getTelegramUserForInternal } = fixture();
     apps.push(app);
@@ -115,6 +133,25 @@ describe('AI internal bot routes', () => {
     });
     expect(response.statusCode).toBe(401);
     expect(getTelegramUserForInternal).not.toHaveBeenCalled();
+  });
+
+  it('returns sanitized provider state only through HMAC-protected internal status', async () => {
+    const { app } = fixture();
+    apps.push(app);
+    const path = '/internal/ai/providers/status';
+    const response = await app.inject({
+      headers: signedHeaders('GET', path),
+      method: 'GET',
+      url: path,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      providers: {
+        bai: { configured: true, enabled: true, state: 'ACTIVE' },
+        openai: { configured: false, enabled: true, state: 'OPEN' },
+      },
+    });
+    expect(response.body).not.toMatch(/api.?key|secret|prefix|length/i);
   });
 
   it.each(['', 'x'.repeat(12_001)])('rejects an empty or oversized AI prompt', async (content) => {

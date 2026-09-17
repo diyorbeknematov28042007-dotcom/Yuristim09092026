@@ -2,21 +2,45 @@ import { assertProviderResponse, assertUsage, number, readSseJson, text } from '
 import {
   AiProviderError,
   type AiProviderAdapter,
+  type AiProviderName,
   type AiProviderRequest,
   type AiProviderResponse,
   type AiReasoningEffort,
 } from './types.js';
 
-interface AnthropicAdapterOptions {
+export interface OpenAiCompatibleAdapterOptions {
   apiKey?: string | undefined;
-  effort: AiReasoningEffort;
+  baseUrl: string;
   model: string;
+  provider: Extract<AiProviderName, 'openai' | 'bai'>;
+  reasoningEffort: AiReasoningEffort;
   fetch?: typeof fetch;
 }
 
+function requestBody(
+  request: AiProviderRequest,
+  stream: boolean,
+  model: string,
+  reasoningEffort: AiReasoningEffort,
+) {
+  return {
+    input: request.messages.map((message) => ({ content: message.content, role: message.role })),
+    instructions: request.systemPrompt,
+    max_output_tokens: request.maxOutputTokens,
+    model,
+    reasoning: { effort: reasoningEffort },
+    stream,
+  };
+}
+
 function responseContent(value: Record<string, unknown>): string {
-  const content = Array.isArray(value.content) ? value.content : [];
-  return content
+  const output = Array.isArray(value.output) ? value.output : [];
+  return output
+    .flatMap((item) =>
+      item && typeof item === 'object' && Array.isArray((item as Record<string, unknown>).content)
+        ? ((item as Record<string, unknown>).content as unknown[])
+        : [],
+    )
     .map((item) =>
       item && typeof item === 'object' ? text((item as Record<string, unknown>).text) : null,
     )
@@ -30,15 +54,18 @@ function responseUsage(value: Record<string, unknown>) {
   return { inputTokens: number(usage.input_tokens), outputTokens: number(usage.output_tokens) };
 }
 
-export class AnthropicAdapter implements AiProviderAdapter {
-  readonly name = 'anthropic' as const;
+export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
+  readonly name: Extract<AiProviderName, 'openai' | 'bai'>;
   readonly supportsStreaming = true;
   readonly configured: boolean;
   private readonly fetchImplementation: typeof fetch;
+  private readonly responsesUrl: string;
 
-  constructor(private readonly options: AnthropicAdapterOptions) {
+  constructor(private readonly options: OpenAiCompatibleAdapterOptions) {
+    this.name = options.provider;
     this.configured = Boolean(options.apiKey);
     this.fetchImplementation = options.fetch ?? fetch;
+    this.responsesUrl = `${options.baseUrl.replace(/\/$/, '')}/responses`;
   }
 
   async generate(request: AiProviderRequest): Promise<AiProviderResponse> {
@@ -61,44 +88,39 @@ export class AnthropicAdapter implements AiProviderAdapter {
   ): Promise<AiProviderResponse> {
     const response = await this.call(request, true);
     let content = '';
-    let inputTokens = 0;
-    let outputTokens = 0;
+    let usage = { inputTokens: 0, outputTokens: 0 };
     for await (const event of readSseJson(response)) {
-      if (event.type === 'message_start' && event.message && typeof event.message === 'object') {
-        inputTokens = responseUsage(event.message as Record<string, unknown>).inputTokens;
-      }
-      if (event.type === 'content_block_delta' && event.delta && typeof event.delta === 'object') {
-        const delta = text((event.delta as Record<string, unknown>).text);
+      if (event.type === 'response.output_text.delta') {
+        const delta = text(event.delta);
         if (delta) {
           content += delta;
           await onDelta(delta);
         }
       }
-      if (event.type === 'message_delta' && event.usage && typeof event.usage === 'object') {
-        outputTokens = number((event.usage as Record<string, unknown>).output_tokens);
+      if (
+        event.type === 'response.completed' &&
+        event.response &&
+        typeof event.response === 'object'
+      ) {
+        const completed = event.response as Record<string, unknown>;
+        usage = responseUsage(completed);
+        if (!content) content = responseContent(completed);
       }
     }
     if (!content.trim()) throw new AiProviderError('unavailable', false);
-    assertUsage(inputTokens, outputTokens);
-    return { content: content.trim(), usage: { inputTokens, outputTokens } };
+    assertUsage(usage.inputTokens, usage.outputTokens);
+    return { content: content.trim(), usage };
   }
 
   private async call(request: AiProviderRequest, stream: boolean): Promise<Response> {
     if (!this.options.apiKey) throw new AiProviderError('configuration', false);
-    const response = await this.fetchImplementation('https://api.anthropic.com/v1/messages', {
-      body: JSON.stringify({
-        max_tokens: request.maxOutputTokens,
-        messages: request.messages,
-        model: this.options.model,
-        output_config: { effort: this.options.effort },
-        stream,
-        system: request.systemPrompt,
-        thinking: { type: 'adaptive' },
-      }),
+    const response = await this.fetchImplementation(this.responsesUrl, {
+      body: JSON.stringify(
+        requestBody(request, stream, this.options.model, this.options.reasoningEffort),
+      ),
       headers: {
-        'anthropic-version': '2023-06-01',
+        authorization: `Bearer ${this.options.apiKey}`,
         'content-type': 'application/json',
-        'x-api-key': this.options.apiKey,
       },
       method: 'POST',
       signal: request.signal,

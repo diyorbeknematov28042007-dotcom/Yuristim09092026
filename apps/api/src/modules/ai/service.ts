@@ -136,8 +136,12 @@ export class AiService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  availability(): Record<AiMode, boolean> {
+  availability(): Promise<Record<AiMode, boolean>> {
     return this.gateway.availability();
+  }
+
+  providerStatus() {
+    return this.gateway.providerStatus();
   }
 
   async createConversation(
@@ -276,7 +280,7 @@ export class AiService {
       : null;
     return {
       activeConversationId: activeConversation?.public_id ?? null,
-      availability: this.gateway.availability(),
+      availability: await this.gateway.availability(),
       balance: await this.credits.getBalance(userId),
       botChatActive: state?.bot_chat_active ?? false,
       mode:
@@ -374,12 +378,25 @@ export class AiService {
       const generated = await this.gateway.execute({
         messages: context.messages,
         mode,
+        onAttempt: async (event) => {
+          await this.repository.recordProviderAttempt({
+            ...event,
+            messageId: assistantMessage!.id,
+          });
+        },
         ...(input.onDelta ? { onDelta: input.onDelta } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
         systemPrompt,
       });
-      const providerCostUsd = calculateProviderCostUsd(config, generated.usage);
-      const chargedCredits = calculateCreditCharge(config, generated.usage);
+      await this.repository.routeMessage({
+        messageId: assistantMessage.id,
+        model: generated.config.model,
+        now: this.now(),
+        provider: generated.config.provider,
+        userId: input.userId,
+      });
+      const providerCostUsd = calculateProviderCostUsd(generated.config, generated.usage);
+      const chargedCredits = calculateCreditCharge(generated.config, generated.usage);
       const completed = await this.repository.completeMessage({
         chargedCredits,
         content: generated.content,
@@ -395,9 +412,9 @@ export class AiService {
         conversationId: conversation.id,
         durationMilliseconds: Date.now() - startedAt,
         inputTokens: generated.usage.inputTokens,
-        model: config.model,
+        model: generated.config.model,
         outputTokens: generated.usage.outputTokens,
-        provider: config.provider,
+        provider: generated.config.provider,
         requestId: input.requestId,
         success: true,
       });

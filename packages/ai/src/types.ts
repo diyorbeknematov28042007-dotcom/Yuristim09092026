@@ -1,5 +1,9 @@
 export type AiMode = 'fast' | 'expert';
-export type AiProviderName = 'gemini' | 'openai' | 'anthropic';
+export type AiProviderName = 'gemini' | 'bai' | 'openai' | 'anthropic';
+export type AiExpertProviderName = Exclude<AiProviderName, 'gemini'>;
+export type AiReasoningEffort = 'low' | 'medium' | 'high';
+export type AiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+export type AiProviderCircuitState = 'ACTIVE' | 'OPEN' | 'HALF_OPEN' | 'MANUAL_PAUSED';
 export type AiMessageRole = 'user' | 'assistant';
 
 export interface AiContextMessage {
@@ -39,6 +43,7 @@ export class AiProviderError extends Error {
     readonly category: AiProviderErrorCategory,
     readonly retryable: boolean,
     message = 'AI provider request failed',
+    readonly retryAfterMilliseconds?: number | undefined,
   ) {
     super(message);
     this.name = 'AiProviderError';
@@ -71,12 +76,83 @@ export interface AiModelConfig {
   supportsStreaming: boolean;
 }
 
+export interface AiProviderRuntimeState {
+  provider: AiProviderName;
+  manualEnabled: boolean;
+  circuitState: AiProviderCircuitState;
+  consecutiveFailures: number;
+  failureWindowStartedAt: string | null;
+  pausedUntil: string | null;
+  cooldownSeconds: number;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastErrorCategory: AiProviderErrorCategory | null;
+}
+
+export interface AiProviderStateStore {
+  getProviderState(provider: AiProviderName): Promise<AiProviderRuntimeState | null>;
+  acquireProvider(input: {
+    provider: AiProviderName;
+    now: Date;
+    halfOpenLeaseSeconds: number;
+  }): Promise<{ allowed: boolean; state: AiProviderRuntimeState }>;
+  recordProviderSuccess(input: {
+    provider: AiProviderName;
+    now: Date;
+    baseCooldownSeconds: number;
+  }): Promise<AiProviderRuntimeState>;
+  recordProviderFailure(input: {
+    provider: AiProviderName;
+    category: AiProviderErrorCategory;
+    now: Date;
+    failureThreshold: number;
+    failureWindowSeconds: number;
+    baseCooldownSeconds: number;
+    maxCooldownSeconds: number;
+    retryAfterSeconds?: number | undefined;
+  }): Promise<AiProviderRuntimeState>;
+}
+
+export interface AiProviderAttemptEvent {
+  attemptNumber: number;
+  provider: AiProviderName;
+  model: string;
+  status: 'succeeded' | 'failed' | 'interrupted';
+  errorCategory?: AiProviderErrorCategory | undefined;
+  latencyMilliseconds: number;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  startedAt: Date;
+  completedAt: Date;
+}
+
+export interface AiExpertRoutingConfig {
+  mode: 'auto' | 'fixed';
+  order: AiExpertProviderName[];
+  fixedProvider?: AiExpertProviderName | undefined;
+}
+
+export interface AiCircuitBreakerConfig {
+  failureThreshold: number;
+  failureWindowSeconds: number;
+  cooldownSeconds: number;
+  maxCooldownSeconds: number;
+  halfOpenLeaseSeconds: number;
+}
+
+export interface AiProviderStatus {
+  configured: boolean;
+  enabled: boolean;
+  state: AiProviderCircuitState;
+}
+
 export interface AiExecutionRequest {
   mode: AiMode;
   messages: AiProviderRequest['messages'];
   systemPrompt: string;
   signal?: AbortSignal;
   onDelta?: (delta: string) => void | Promise<void>;
+  onAttempt?: (event: AiProviderAttemptEvent) => void | Promise<void>;
 }
 
 export interface AiExecutionResult extends AiProviderResponse {

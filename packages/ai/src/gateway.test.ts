@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AiGateway } from './gateway.js';
+import { InMemoryAiProviderStateStore } from './provider-state.js';
 import {
   AiProviderError,
   type AiModelConfig,
@@ -41,8 +42,17 @@ function adapter(name: AiProviderName, generate: AiProviderAdapter['generate']):
 function gateway(adapters: AiProviderAdapter[], maxRetries = 0): AiGateway {
   return new AiGateway({
     adapters,
+    circuitBreaker: {
+      cooldownSeconds: 300,
+      failureThreshold: 3,
+      failureWindowSeconds: 120,
+      halfOpenLeaseSeconds: 30,
+      maxCooldownSeconds: 1_800,
+    },
+    expertRouting: { fixedProvider: 'openai', mode: 'fixed', order: ['openai'] },
     maxRetries,
     models: [model('fast', 'gemini'), model('expert', 'openai')],
+    providerStateStore: new InMemoryAiProviderStateStore(),
     timeoutMilliseconds: 25,
     wait: () => Promise.resolve(),
   });
@@ -60,8 +70,16 @@ describe('AiGateway', () => {
       () =>
         new AiGateway({
           adapters: [],
+          circuitBreaker: {
+            cooldownSeconds: 300,
+            failureThreshold: 3,
+            failureWindowSeconds: 120,
+            halfOpenLeaseSeconds: 30,
+            maxCooldownSeconds: 1_800,
+          },
           maxRetries: 0,
           models: [model('fast', 'openai'), model('expert', 'openai')],
+          providerStateStore: new InMemoryAiProviderStateStore(),
           timeoutMilliseconds: 25,
         }),
     ).toThrow('Gemini only');
@@ -83,7 +101,7 @@ describe('AiGateway', () => {
   it('uses bounded same-provider retry for transient failures', async () => {
     const gemini = vi
       .fn()
-      .mockRejectedValueOnce(new AiProviderError('rate_limit', true))
+      .mockRejectedValueOnce(new AiProviderError('unavailable', true))
       .mockResolvedValue({ content: 'ok', usage: { inputTokens: 10, outputTokens: 5 } });
     const result = await gateway([adapter('gemini', gemini)], 1).execute(request);
     expect(result.content).toBe('ok');

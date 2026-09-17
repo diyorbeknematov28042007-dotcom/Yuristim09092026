@@ -41,20 +41,31 @@ function parseSseEvent(event: string): Record<string, unknown> | null {
   }
 }
 
-export function mapHttpError(status: number): AiProviderError {
+function retryAfterMilliseconds(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const date = Date.parse(value);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, date - Date.now());
+}
+
+export function mapHttpError(status: number, retryAfter?: number | undefined): AiProviderError {
   if (status === 400 || status === 404 || status === 422)
     return new AiProviderError('invalid_request', false);
   if (status === 401 || status === 403) return new AiProviderError('configuration', false);
   if (status === 408 || status === 504) return new AiProviderError('timeout', true);
-  if (status === 429) return new AiProviderError('rate_limit', true);
+  if (status === 429)
+    return new AiProviderError('rate_limit', true, 'AI provider request failed', retryAfter);
   if (status >= 500) return new AiProviderError('unavailable', true);
   return new AiProviderError('unknown', false);
 }
 
 export async function assertProviderResponse(response: Response): Promise<void> {
   if (response.ok) return;
+  const retryAfter = retryAfterMilliseconds(response.headers.get('retry-after'));
   await response.body?.cancel().catch(() => undefined);
-  throw mapHttpError(response.status);
+  throw mapHttpError(response.status, retryAfter);
 }
 
 export function text(value: unknown): string | null {

@@ -11,8 +11,30 @@ const optionalModel = z.preprocess(
 );
 const optionalExpertProvider = z.preprocess(
   (value) => (value === '' ? undefined : value),
-  z.enum(['openai', 'anthropic']).optional(),
+  z.enum(['bai', 'openai', 'anthropic']).optional(),
 );
+const providerReasoningEffort = z.enum(['low', 'medium', 'high']);
+const geminiThinkingLevel = z.enum(['minimal', 'low', 'medium', 'high']);
+const optionalBoolean = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+);
+const providerOrder = z
+  .string()
+  .min(1)
+  .default('bai,openai,anthropic')
+  .transform((value, context) => {
+    const providers = value.split(',').map((provider) => provider.trim());
+    const valid = providers.every((provider) => ['bai', 'openai', 'anthropic'].includes(provider));
+    if (!valid || new Set(providers).size !== providers.length) {
+      context.addIssue({ code: 'custom', message: 'Invalid or duplicate Expert provider order' });
+      return z.NEVER;
+    }
+    return providers as Array<'bai' | 'openai' | 'anthropic'>;
+  });
 const optionalPositiveNumber = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.coerce.number().positive().optional(),
@@ -39,10 +61,31 @@ const apiEnvSchema = z
     ADMIN_BOOTSTRAP_USERNAME: z.string().trim().min(3).max(64).optional(),
     ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).max(256).optional(),
     GEMINI_API_KEY: optionalSecret,
+    BAI_API_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,
     ANTHROPIC_API_KEY: optionalSecret,
-    AI_FAST_MODEL: z.string().min(1).max(120).default('gemini-3.5-flash-lite'),
+    GEMINI_MODEL: optionalModel,
+    GEMINI_THINKING_LEVEL: geminiThinkingLevel.default('low'),
+    BAI_BASE_URL: z.string().url().default('https://api.b.ai/v1'),
+    BAI_MODEL: optionalModel,
+    BAI_REASONING_EFFORT: providerReasoningEffort.default('high'),
+    OPENAI_MODEL: optionalModel,
+    OPENAI_REASONING_EFFORT: providerReasoningEffort.default('high'),
+    ANTHROPIC_MODEL: optionalModel,
+    ANTHROPIC_EFFORT: providerReasoningEffort.default('high'),
+    AI_EXPERT_PROVIDER_MODE: z.enum(['auto', 'fixed']).default('auto'),
+    AI_EXPERT_PROVIDER_ORDER: providerOrder,
     AI_EXPERT_PROVIDER: optionalExpertProvider,
+    AI_PROVIDER_GEMINI_ENABLED: optionalBoolean.default(true),
+    AI_PROVIDER_BAI_ENABLED: optionalBoolean.default(true),
+    AI_PROVIDER_OPENAI_ENABLED: optionalBoolean.default(true),
+    AI_PROVIDER_ANTHROPIC_ENABLED: optionalBoolean.default(true),
+    AI_PROVIDER_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(20).default(3),
+    AI_PROVIDER_FAILURE_WINDOW_SECONDS: z.coerce.number().int().min(10).max(3_600).default(120),
+    AI_PROVIDER_COOLDOWN_SECONDS: z.coerce.number().int().min(10).max(86_400).default(300),
+    AI_PROVIDER_MAX_COOLDOWN_SECONDS: z.coerce.number().int().min(10).max(86_400).default(1_800),
+    // Backward-compatible aliases. New deployments should use provider-specific variables.
+    AI_FAST_MODEL: optionalModel,
     AI_EXPERT_MODEL: optionalModel,
     AI_FAST_INPUT_COST_PER_MILLION_USD: z.coerce.number().positive().default(0.3),
     AI_FAST_OUTPUT_COST_PER_MILLION_USD: z.coerce.number().positive().default(2.5),
@@ -65,10 +108,26 @@ const apiEnvSchema = z
   .refine(
     (value) => Boolean(value.ADMIN_BOOTSTRAP_USERNAME) === Boolean(value.ADMIN_BOOTSTRAP_PASSWORD),
     { message: 'Admin bootstrap username and password must be configured together' },
-  );
+  )
+  .refine(
+    (value) => value.AI_EXPERT_PROVIDER_MODE !== 'fixed' || Boolean(value.AI_EXPERT_PROVIDER),
+    {
+      message: 'AI_EXPERT_PROVIDER is required when AI_EXPERT_PROVIDER_MODE=fixed',
+      path: ['AI_EXPERT_PROVIDER'],
+    },
+  )
+  .refine((value) => value.AI_PROVIDER_MAX_COOLDOWN_SECONDS >= value.AI_PROVIDER_COOLDOWN_SECONDS, {
+    message: 'Maximum provider cooldown cannot be shorter than the base cooldown',
+    path: ['AI_PROVIDER_MAX_COOLDOWN_SECONDS'],
+  });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
 export function loadApiEnv(source: Record<string, string | undefined> = process.env): ApiEnv {
-  return parseEnv(apiEnvSchema, source);
+  const parsed = parseEnv(apiEnvSchema, source);
+  // Phase 7 backward compatibility: AI_EXPERT_PROVIDER previously meant fixed routing.
+  if (source.AI_EXPERT_PROVIDER_MODE === undefined && parsed.AI_EXPERT_PROVIDER) {
+    return { ...parsed, AI_EXPERT_PROVIDER_MODE: 'fixed' };
+  }
+  return parsed;
 }

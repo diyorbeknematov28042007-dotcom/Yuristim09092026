@@ -81,7 +81,7 @@ local/hosting environmentida saqlanadi; `NEXT_PUBLIC_*`dan boshqa qiymat browser
 bundle'ga kiritilmaydi.
 
 Tezkor AI uchun API service'da `GEMINI_API_KEY`; Ekspert uchun kamida
-`OPENAI_API_KEY` yoki `ANTHROPIC_API_KEY` kerak. Provider/model/pricing runtime
+`BAI_API_KEY`, `OPENAI_API_KEY` yoki `ANTHROPIC_API_KEY` kerak. Provider/model/pricing runtime
 sozlamalari `.env.example`da markazlashtirilgan. Bot provider secretlarini olmaydi.
 
 ## Development

@@ -8,12 +8,17 @@ declare
   v_duplicate jsonb;
   v_failure jsonb;
   v_message public.ai_messages%rowtype;
+  v_provider_state public.ai_provider_runtime_state%rowtype;
   v_balance numeric;
 begin
   assert (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.ai_conversations'::regclass),
     'conversation RLS must be enabled and forced';
   assert (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.ai_messages'::regclass),
     'message RLS must be enabled and forced';
+  assert (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.ai_provider_runtime_state'::regclass),
+    'provider runtime RLS must be enabled and forced';
+  assert (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.ai_provider_attempts'::regclass),
+    'provider attempts RLS must be enabled and forced';
   assert not has_function_privilege('anon', 'public.create_ai_conversation(uuid,text,text,timestamptz)', 'EXECUTE'),
     'anon must not execute AI functions';
 
@@ -66,12 +71,40 @@ begin
     'phase7-live-request-0002', 'gemini', 'gemini-test', 'uz-law-mvp-v1',
     'Failure prompt', true, '2026-09-17 08:04:00+00'
   );
+  v_message := public.route_ai_message(
+    v_user_id, (v_failure->'assistantMessage'->>'id')::uuid,
+    'bai', 'DeepSeek-V4.1-Flash', '2026-09-17 08:04:01+00'
+  );
+  assert v_message.provider = 'bai', 'final provider route must persist independently of transport';
+  insert into public.ai_provider_attempts (
+    message_id, provider, model, attempt_number, status, error_category, latency_ms,
+    started_at, completed_at
+  ) values (
+    (v_failure->'assistantMessage'->>'id')::uuid, 'bai', 'DeepSeek-V4.1-Flash',
+    1, 'failed', 'timeout', 1000,
+    '2026-09-17 08:04:01+00', '2026-09-17 08:04:02+00'
+  );
   v_message := public.fail_ai_message(
     v_user_id, (v_failure->'assistantMessage'->>'id')::uuid,
     'provider_timeout', false, '2026-09-17 08:05:00+00'
   );
   assert v_message.status = 'failed' and v_message.charged_credits = 0,
     'provider failure must persist with zero charge';
+  assert (select count(*) from public.ai_provider_attempts where message_id = v_message.id) = 1,
+    'provider attempt telemetry must persist without charging';
+
+  update public.ai_provider_runtime_state
+  set manual_enabled = true, circuit_state = 'ACTIVE', consecutive_failures = 0,
+      failure_window_started_at = null, paused_until = null, cooldown_seconds = 300,
+      last_error_category = null
+  where provider = 'bai';
+  perform public.record_ai_provider_failure(
+    'bai', 'rate_limit', 3, 120, 300, 1800, 600, '2026-09-17 08:05:01+00'
+  );
+  select * into v_provider_state from public.ai_provider_runtime_state where provider = 'bai';
+  assert v_provider_state.circuit_state = 'OPEN'
+    and v_provider_state.cooldown_seconds = 600,
+    'rate limit must open shared circuit and honor Retry-After';
 
   v_message := public.reverse_ai_delivery_charge(
     v_user_id, (v_begin->'assistantMessage'->>'id')::uuid,
@@ -90,8 +123,9 @@ select jsonb_build_object(
   'status', 'pass',
   'transaction', 'rolled_back',
   'checks', array[
-    'rls_force', 'client_denial', 'persistence', 'fractional_charge',
-    'exactly_once', 'failed_no_charge', 'delivery_reversal', 'no_fake_sources'
+    'rls_force', 'client_denial', 'provider_attempts', 'shared_circuit', 'route_metadata',
+    'persistence', 'fractional_charge', 'exactly_once', 'failed_no_charge',
+    'delivery_reversal', 'no_fake_sources'
   ]
 ) as phase7_ai_smoke;
 

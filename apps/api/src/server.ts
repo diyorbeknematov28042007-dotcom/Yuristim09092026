@@ -34,11 +34,8 @@ const marketplaceService = new MarketplaceService(
   new SupabaseMarketplaceRepository(databaseClient),
 );
 const creditService = new CreditService(financeRepository);
-const aiService = new AiService(
-  new SupabaseAiRepository(databaseClient),
-  createAiGateway(env),
-  creditService,
-);
+const aiRepository = new SupabaseAiRepository(databaseClient);
+const aiService = new AiService(aiRepository, createAiGateway(env, aiRepository), creditService);
 const paymentService = new PaymentService(
   financeRepository,
   new SandboxPaymentAdapter(env.PAYMENT_WEBHOOK_SECRET),

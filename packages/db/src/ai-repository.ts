@@ -3,7 +3,33 @@ import type { Database } from './database.types.js';
 export type AiConversationRow = Database['public']['Tables']['ai_conversations']['Row'];
 export type AiMessageRow = Database['public']['Tables']['ai_messages']['Row'];
 export type AiMessageSourceRow = Database['public']['Tables']['ai_message_sources']['Row'];
+export type AiProviderAttemptRow = Database['public']['Tables']['ai_provider_attempts']['Row'];
+export type AiProviderRuntimeStateRow =
+  Database['public']['Tables']['ai_provider_runtime_state']['Row'];
 export type AiUserStateRow = Database['public']['Tables']['ai_user_states']['Row'];
+
+export type AiProviderName = 'gemini' | 'bai' | 'openai' | 'anthropic';
+export type AiProviderErrorCategory =
+  | 'timeout'
+  | 'rate_limit'
+  | 'unavailable'
+  | 'invalid_request'
+  | 'configuration'
+  | 'cancelled'
+  | 'unknown';
+
+export interface AiProviderRuntimeState {
+  provider: AiProviderName;
+  manualEnabled: boolean;
+  circuitState: 'ACTIVE' | 'OPEN' | 'HALF_OPEN' | 'MANUAL_PAUSED';
+  consecutiveFailures: number;
+  failureWindowStartedAt: string | null;
+  pausedUntil: string | null;
+  cooldownSeconds: number;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastErrorCategory: AiProviderErrorCategory | null;
+}
 
 export interface AiBeginMessageResult {
   duplicate: boolean;
@@ -58,6 +84,26 @@ export interface AiRepository {
     streaming: boolean;
     now: Date;
   }): Promise<AiBeginMessageResult>;
+  routeMessage(input: {
+    userId: string;
+    messageId: string;
+    provider: AiProviderName;
+    model: string;
+    now: Date;
+  }): Promise<AiMessageRow>;
+  recordProviderAttempt(input: {
+    messageId: string;
+    attemptNumber: number;
+    provider: AiProviderName;
+    model: string;
+    status: 'succeeded' | 'failed' | 'interrupted';
+    errorCategory?: AiProviderErrorCategory | undefined;
+    latencyMilliseconds: number;
+    inputTokens?: number | undefined;
+    outputTokens?: number | undefined;
+    startedAt: Date;
+    completedAt: Date;
+  }): Promise<AiProviderAttemptRow>;
   completeMessage(input: {
     userId: string;
     messageId: string;
