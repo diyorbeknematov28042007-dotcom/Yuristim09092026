@@ -14,6 +14,7 @@ import {
   showMarketplaceDraft,
   showMarketplaceUserHome,
 } from '../services/marketplace.service.js';
+import { sendAiPrompt, showAiFileRedirect, showAiHome } from '../services/ai.service.js';
 
 export function registerMessageHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('message:text', async (context) => {
@@ -154,42 +155,61 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
 
+    if (message === t(language, 'ai')) {
+      await showAiHome(context, language);
+      return;
+    }
     if (message === t(language, 'services')) {
+      await context.yuristimApi.leaveAi(context.from.id);
       await context.reply(t(language, 'servicesTitle'), {
         reply_markup: servicesKeyboard(language),
       });
       return;
     }
     if (message === t(language, 'findLawyer') && data.user.activeMode === 'user') {
+      await context.yuristimApi.leaveAi(context.from.id);
       await showMarketplaceUserHome(context, language);
       return;
     }
     if (message === t(language, 'findClients') && data.user.activeMode === 'lawyer') {
+      await context.yuristimApi.leaveAi(context.from.id);
       await showLawyerDiscovery(context, language);
       return;
     }
     if (message === t(language, 'settings')) {
+      await context.yuristimApi.leaveAi(context.from.id);
       await context.reply(t(language, 'settingsTitle'), {
         reply_markup: settingsKeyboard(language),
       });
       return;
     }
     if (message === t(language, 'questions')) {
+      await context.yuristimApi.leaveAi(context.from.id);
       await context.reply(t(language, 'questionsTitle'), {
         reply_markup: questionsKeyboard(language),
       });
       return;
     }
-    if (message === t(language, 'ai')) {
-      await context.reply(t(language, 'aiLater'));
-      return;
-    }
     if (message === t(language, 'balance')) {
+      await context.yuristimApi.leaveAi(context.from.id);
       await showBalance(context, language);
       return;
     }
     if (message === t(language, 'marketplace')) {
+      await context.yuristimApi.leaveAi(context.from.id);
       await showLawyerMarketplace(context, language);
+      return;
+    }
+
+    const aiStatus = await context.yuristimApi.getAiStatus(context.from.id);
+    if (aiStatus.botChatActive && aiStatus.activeConversationId) {
+      await sendAiPrompt(
+        context,
+        language,
+        aiStatus.activeConversationId,
+        message,
+        `telegram:${context.chat.id}:${context.message.message_id}`,
+      );
       return;
     }
 
@@ -203,7 +223,11 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
     const language = data.user.language ?? 'uz';
     const lawyer = await context.yuristimApi.getLawyerContext(context.from.id);
     const step = lawyer.verification?.status === 'draft' ? lawyer.verification.draft.step : null;
-    if (step !== 'profile_image' && step !== 'verification_document') return;
+    if (step !== 'profile_image' && step !== 'verification_document') {
+      const aiStatus = await context.yuristimApi.getAiStatus(context.from.id);
+      if (aiStatus.botChatActive) await showAiFileRedirect(context, language);
+      return;
+    }
     const photo = context.message.photo.at(-1);
     if (!photo || (photo.file_size !== undefined && photo.file_size > 5 * 1024 * 1024)) {
       await context.reply(t(language, 'verificationFileInvalid'));
@@ -231,7 +255,11 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
     const language = data.user.language ?? 'uz';
     const lawyer = await context.yuristimApi.getLawyerContext(context.from.id);
     const step = lawyer.verification?.status === 'draft' ? lawyer.verification.draft.step : null;
-    if (step !== 'profile_image' && step !== 'verification_document') return;
+    if (step !== 'profile_image' && step !== 'verification_document') {
+      const aiStatus = await context.yuristimApi.getAiStatus(context.from.id);
+      if (aiStatus.botChatActive) await showAiFileRedirect(context, language);
+      return;
+    }
     const document = context.message.document;
     const contentType = document.mime_type;
     if (
@@ -257,5 +285,19 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
     } catch {
       await context.reply(t(language, 'verificationFileInvalid'));
     }
+  });
+
+  composer.on('message:voice', async (context) => {
+    if (!context.from) return;
+    const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
+    const status = await context.yuristimApi.getAiStatus(context.from.id);
+    if (status.botChatActive) await showAiFileRedirect(context, data.user.language ?? 'uz');
+  });
+
+  composer.on('message:audio', async (context) => {
+    if (!context.from) return;
+    const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
+    const status = await context.yuristimApi.getAiStatus(context.from.id);
+    if (status.botChatActive) await showAiFileRedirect(context, data.user.language ?? 'uz');
   });
 }

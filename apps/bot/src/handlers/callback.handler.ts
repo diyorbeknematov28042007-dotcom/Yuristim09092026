@@ -39,6 +39,13 @@ import {
   showMarketplaceReview,
   showMarketplaceUserHome,
 } from '../services/marketplace.service.js';
+import {
+  showAiConversation,
+  showAiHistory,
+  showAiHome,
+  startNewAiConversation,
+  switchAiMode,
+} from '../services/ai.service.js';
 
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('callback_query:data', async (context) => {
@@ -136,7 +143,28 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       return;
     }
     if (callback === 'nav:ai') {
-      await editOrReply(context, t(language, 'aiLater'));
+      await showAiHome(context, language);
+      return;
+    }
+    if (callback === 'ai:back') {
+      await context.yuristimApi.leaveAi(context.from.id);
+      await showMainMenu(context, data);
+      return;
+    }
+    if (callback === 'ai:new') {
+      await startNewAiConversation(context, language);
+      return;
+    }
+    if (callback === 'ai:history') {
+      await showAiHistory(context, language);
+      return;
+    }
+    if (callback === 'ai:mode:fast' || callback === 'ai:mode:expert') {
+      await switchAiMode(context, language, callback.endsWith('expert') ? 'expert' : 'fast');
+      return;
+    }
+    if (callback.startsWith('ai:open:')) {
+      await showAiConversation(context, language, callback.slice('ai:open:'.length));
       return;
     }
     if (callback === 'nav:balance') {
@@ -446,6 +474,10 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       return;
     }
 
+    if (callback === 'questions:ai') {
+      await showAiHome(context, language);
+      return;
+    }
     if (callback.startsWith('questions:')) {
       const text =
         callback === 'questions:support' && context.botConfig.supportUsername

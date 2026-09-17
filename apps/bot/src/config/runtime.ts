@@ -6,4 +6,5 @@ export interface BotRuntimeConfig {
   termsVersion: string;
   marketplaceChannelId: number;
   marketplaceChannelUrl: string;
+  miniAppUrl?: string;
 }

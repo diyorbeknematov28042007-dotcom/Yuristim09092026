@@ -24,8 +24,10 @@ const botEnvSchema = z.object({
   PUBLIC_OFFER_URL: optionalUrl,
   PRIVACY_URL: optionalUrl,
   SUPPORT_USERNAME: optionalUsername,
+  MINI_APP_URL: optionalUrl,
   TERMS_VERSION: z.string().min(1).max(64).default('2026-09'),
   API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(500).max(30_000).default(5_000),
+  AI_API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
 });
 
 export type BotEnv = z.infer<typeof botEnvSchema>;

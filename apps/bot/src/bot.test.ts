@@ -1,4 +1,8 @@
 import type {
+  AiConversationView,
+  AiMessageView,
+  AiSendResult,
+  AiStatusView,
   BotLawyerContext,
   BotOnboardingAction,
   BotUserContext,
@@ -24,6 +28,7 @@ import { t } from './i18n/index.js';
 import { mainLawyerKeyboard } from './keyboards/main-lawyer.keyboard.js';
 import { mainUserKeyboard } from './keyboards/main-user.keyboard.js';
 import { servicesKeyboard } from './keyboards/services.keyboard.js';
+import { telegramChunks } from './services/ai.service.js';
 import { displayName } from './services/user-context.service.js';
 
 const botInfo = {
@@ -105,6 +110,26 @@ class FakeApi implements YuristimApi {
       price: 9900,
     },
   ];
+  aiConversations: AiConversationView[] = [
+    {
+      createdAt: '2026-09-17T08:00:00.000Z',
+      id: 'aic_000000000000000000000001',
+      lastMessageAt: null,
+      mode: 'fast',
+      status: 'active',
+      title: 'Yangi chat',
+      updatedAt: '2026-09-17T08:00:00.000Z',
+    },
+  ];
+  aiMessages: AiMessageView[] = [];
+  aiStatus: AiStatusView = {
+    activeConversationId: 'aic_000000000000000000000001',
+    availability: { expert: true, fast: true },
+    balance: this.creditBalance,
+    botChatActive: false,
+    mode: 'fast',
+  };
+  aiDeliveryFailures: string[] = [];
 
   ensureTelegramUser(identity: { telegramUserId: number }): Promise<EnsureUserResult> {
     this.ensuredTelegramIds.push(identity.telegramUserId);
@@ -254,6 +279,117 @@ class FakeApi implements YuristimApi {
 
   getAcceptProducts(): Promise<MarketplaceAcceptProductView[]> {
     return Promise.resolve(this.acceptProducts);
+  }
+
+  enterAi(): Promise<{ conversation: AiConversationView; status: AiStatusView }> {
+    this.aiStatus = { ...this.aiStatus, botChatActive: true };
+    return Promise.resolve({ conversation: this.aiConversations[0]!, status: this.aiStatus });
+  }
+
+  leaveAi(): Promise<void> {
+    this.aiStatus = { ...this.aiStatus, botChatActive: false };
+    return Promise.resolve();
+  }
+
+  getAiStatus(): Promise<AiStatusView> {
+    return Promise.resolve(this.aiStatus);
+  }
+
+  getAiConversations(): Promise<AiConversationView[]> {
+    return Promise.resolve(this.aiConversations);
+  }
+
+  createAiConversation(
+    _telegramUserId: number,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView> {
+    const conversation: AiConversationView = {
+      createdAt: '2026-09-17T08:01:00.000Z',
+      id: `aic_${String(this.aiConversations.length + 1).padStart(24, '0')}`,
+      lastMessageAt: null,
+      mode,
+      status: 'active',
+      title: 'Yangi chat',
+      updatedAt: '2026-09-17T08:01:00.000Z',
+    };
+    this.aiConversations.push(conversation);
+    this.aiMessages = [];
+    this.aiStatus = {
+      ...this.aiStatus,
+      activeConversationId: conversation.id,
+      botChatActive: true,
+      mode,
+    };
+    return Promise.resolve(conversation);
+  }
+
+  getAiConversation(
+    _telegramUserId: number,
+    conversationId: string,
+  ): Promise<{ conversation: AiConversationView; messages: AiMessageView[] }> {
+    return Promise.resolve({
+      conversation: this.aiConversations.find((item) => item.id === conversationId)!,
+      messages: this.aiMessages,
+    });
+  }
+
+  resumeAiConversation(
+    _telegramUserId: number,
+    conversationId: string,
+  ): Promise<AiConversationView> {
+    const conversation = this.aiConversations.find((item) => item.id === conversationId)!;
+    this.aiStatus = {
+      ...this.aiStatus,
+      activeConversationId: conversation.id,
+      botChatActive: true,
+      mode: conversation.mode,
+    };
+    return Promise.resolve(conversation);
+  }
+
+  switchAiMode(
+    _telegramUserId: number,
+    conversationId: string,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView> {
+    const conversation = this.aiConversations.find((item) => item.id === conversationId)!;
+    conversation.mode = mode;
+    this.aiStatus = { ...this.aiStatus, mode };
+    return Promise.resolve(conversation);
+  }
+
+  sendAiMessage(
+    _telegramUserId: number,
+    conversationId: string,
+    content: string,
+  ): Promise<AiSendResult> {
+    const conversation = this.aiConversations.find((item) => item.id === conversationId)!;
+    const userMessage: AiMessageView = {
+      chargedCredits: 0,
+      completedAt: '2026-09-17T08:02:00.000Z',
+      content,
+      createdAt: '2026-09-17T08:02:00.000Z',
+      id: 'aim_000000000000000000000001',
+      mode: conversation.mode,
+      role: 'user',
+      sourceStatus: 'none',
+      sources: [],
+      status: 'completed',
+    };
+    const assistantMessage: AiMessageView = {
+      ...userMessage,
+      chargedCredits: 1,
+      content: 'Sinov AI javobi',
+      id: 'aim_000000000000000000000002',
+      role: 'assistant',
+    };
+    this.aiMessages.push(userMessage, assistantMessage);
+    return Promise.resolve({ conversation, duplicate: false, message: assistantMessage });
+  }
+
+  reportAiDeliveryFailure(_telegramUserId: number, messageId: string): Promise<void> {
+    this.aiDeliveryFailures.push(messageId);
+    return Promise.resolve();
   }
 }
 
@@ -775,5 +911,67 @@ describe('lawyer verification', () => {
     await bot.handleUpdate(callbackUpdate('lawyer:mode', 140), botInfo);
     expect(api.data.user.activeMode).toBe('lawyer');
     expect(JSON.stringify(calls)).toContain(t('en', 'marketplace'));
+  });
+});
+
+describe('Yuristim AI Telegram UX', () => {
+  function completedUser(language: 'uz' | 'ru' | 'en'): FakeApi {
+    const api = new FakeApi();
+    api.data.user = user({ language, onboardingRole: 'user', onboardingStatus: 'completed' });
+    return api;
+  }
+
+  it.each(['uz', 'ru', 'en'] as const)('opens the localized AI entry in %s', async (language) => {
+    const api = completedUser(language);
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate(t(language, 'ai'), 200), botInfo);
+    expect(api.aiStatus.botChatActive).toBe(true);
+    expect(texts(calls).join('\n')).toContain(t(language, 'aiTitle'));
+    expect(JSON.stringify(calls)).toContain(t(language, 'aiNewChat'));
+    expect(JSON.stringify(calls)).toContain(t(language, 'aiHistory'));
+  });
+
+  it('pseudo-streams progress then edits it with the final answer and charge', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate('Mehnat shartnomasi nima?', 201), botInfo);
+    expect(texts(calls)).toContain(t('uz', 'aiWorking'));
+    expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
+    expect(texts(calls).join('\n')).toContain(`${t('uz', 'aiCreditsCharged')}: 1`);
+    expect(api.aiMessages.map((message) => message.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('switches mode, opens history, creates an isolated chat, and leaves through Back', async () => {
+    const api = completedUser('en');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('ai:mode:expert', 202), botInfo);
+    expect(api.aiStatus.mode).toBe('expert');
+    await bot.handleUpdate(callbackUpdate('ai:history', 203), botInfo);
+    expect(texts(calls)).toContain(t('en', 'aiHistoryTitle'));
+    await bot.handleUpdate(callbackUpdate('ai:new', 204), botInfo);
+    expect(api.aiConversations).toHaveLength(2);
+    expect(api.aiMessages).toHaveLength(0);
+    await bot.handleUpdate(callbackUpdate('ai:back', 205), botInfo);
+    expect(api.aiStatus.botChatActive).toBe(false);
+    expect(texts(calls)).toContain(t('en', 'mainTitle'));
+  });
+
+  it('redirects Telegram documents to Mini App/Web without uploading for AI analysis', async () => {
+    const api = completedUser('ru');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(documentUpdate(206, 'application/pdf', 'contract.pdf'), botInfo);
+    expect(texts(calls)).toContain(t('ru', 'aiFileWebOnly'));
+    expect(api.uploads).toHaveLength(0);
+  });
+
+  it('chunks long plain text without truncating content or exceeding Telegram safety limit', () => {
+    const value = Array.from({ length: 1_500 }, (_, index) => `band-${index}`).join(' ');
+    const chunks = telegramChunks(value);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 3_800)).toBe(true);
+    expect(chunks.join(' ')).toBe(value);
   });
 });
