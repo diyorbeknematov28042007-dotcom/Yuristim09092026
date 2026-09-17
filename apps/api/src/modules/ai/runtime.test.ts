@@ -50,4 +50,16 @@ describe('AI runtime provider model mapping', () => {
       }),
     ).rejects.toMatchObject({ category: 'configuration' });
   });
+
+  it('marks Fast unavailable when Gemini has no credential and never uses Expert', async () => {
+    const ai = gateway({ OPENAI_API_KEY: 'configured' });
+    await expect(ai.availability()).resolves.toMatchObject({ expert: true, fast: false });
+    await expect(
+      ai.execute({
+        messages: [{ content: 'Savol', role: 'user' }],
+        mode: 'fast',
+        systemPrompt: 'Policy',
+      }),
+    ).rejects.toMatchObject({ category: 'configuration' });
+  });
 });
