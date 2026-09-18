@@ -50,7 +50,25 @@ function retryAfterMilliseconds(value: string | null): number | undefined {
   return Math.max(0, date - Date.now());
 }
 
-export function mapHttpError(status: number, retryAfter?: number | undefined): AiProviderError {
+const PROVIDER_CONFIGURATION_ERROR_CODES = new Set([
+  'insufficient_quota',
+  'insufficient_user_quota',
+  'invalid_api_key',
+  'model_not_found',
+  'model_not_supported_on_endpoint',
+]);
+
+export function mapHttpError(
+  status: number,
+  retryAfter?: number | undefined,
+  providerErrorCode?: string | undefined,
+): AiProviderError {
+  if (
+    providerErrorCode &&
+    PROVIDER_CONFIGURATION_ERROR_CODES.has(providerErrorCode.toLowerCase())
+  ) {
+    return new AiProviderError('configuration', false);
+  }
   if (status === 400 || status === 404 || status === 422)
     return new AiProviderError('invalid_request', false);
   if (status === 401 || status === 403) return new AiProviderError('configuration', false);
@@ -64,8 +82,20 @@ export function mapHttpError(status: number, retryAfter?: number | undefined): A
 export async function assertProviderResponse(response: Response): Promise<void> {
   if (response.ok) return;
   const retryAfter = retryAfterMilliseconds(response.headers.get('retry-after'));
-  await response.body?.cancel().catch(() => undefined);
-  throw mapHttpError(response.status, retryAfter);
+  let providerErrorCode: string | undefined;
+  try {
+    const value: unknown = await response.json();
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const error = (value as Record<string, unknown>).error;
+      if (error && typeof error === 'object' && !Array.isArray(error)) {
+        const code = (error as Record<string, unknown>).code;
+        if (typeof code === 'string') providerErrorCode = code;
+      }
+    }
+  } catch {
+    await response.body?.cancel().catch(() => undefined);
+  }
+  throw mapHttpError(response.status, retryAfter, providerErrorCode);
 }
 
 export function text(value: unknown): string | null {

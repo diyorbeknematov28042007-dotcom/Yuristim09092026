@@ -3,7 +3,7 @@ import { AnthropicAdapter } from './anthropic.js';
 import { BaiAdapter } from './bai.js';
 import { GeminiAdapter } from './gemini.js';
 import { OpenAiAdapter } from './openai.js';
-import { mapHttpError, readSseJson } from './sse.js';
+import { assertProviderResponse, mapHttpError, readSseJson } from './sse.js';
 import type { AiProviderRequest } from './types.js';
 
 function request(): AiProviderRequest {
@@ -70,14 +70,14 @@ describe('provider adapters', () => {
       apiKey: 'test',
       baseUrl: 'https://api.b.ai/v1',
       fetch,
-      model: 'DeepSeek-V4.1-Flash',
+      model: 'deepseek-v4.1-flash',
       reasoningEffort: 'high',
     });
     await adapter.generate(request());
     expect(adapter.name).toBe('bai');
     expect(fetch.mock.calls[0]?.[0]).toBe('https://api.b.ai/v1/responses');
     expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
-      model: 'DeepSeek-V4.1-Flash',
+      model: 'deepseek-v4.1-flash',
       reasoning: { effort: 'high' },
     });
   });
@@ -137,4 +137,15 @@ describe('provider adapters', () => {
   ] as const)('maps HTTP %s to %s', (status, category, retryable) => {
     expect(mapHttpError(status)).toMatchObject({ category, retryable });
   });
+
+  it.each(['model_not_found', 'insufficient_user_quota'])(
+    'maps provider configuration code %s to a failover-safe configuration error',
+    async (code) => {
+      await expect(
+        assertProviderResponse(
+          Response.json({ error: { code, message: 'provider detail' } }, { status: 400 }),
+        ),
+      ).rejects.toMatchObject({ category: 'configuration', retryable: false });
+    },
+  );
 });

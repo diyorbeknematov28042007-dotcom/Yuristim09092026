@@ -48,7 +48,7 @@ bitta javobda provider outputlari aralashmaydi.
 Provider-specific inference mapping:
 
 - Gemini `gemini-3.8-flash`: `thinkingConfig.thinkingLevel=low`;
-- B.AI `DeepSeek-V4.1-Flash`: Responses API `reasoning.effort=high`;
+- B.AI `deepseek-v4.1-flash` (provider model ID; display name DeepSeek-V4.1-Flash): Responses API `reasoning.effort=high`;
 - OpenAI `gpt-5.6-sol`: Responses API `reasoning.effort=high`;
 - Anthropic `claude-opus-5`: adaptive thinking va `output_config.effort=high`.
 

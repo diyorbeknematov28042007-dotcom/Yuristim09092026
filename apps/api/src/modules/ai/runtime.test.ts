@@ -24,7 +24,7 @@ describe('AI runtime provider model mapping', () => {
   });
 
   it.each([
-    ['bai', 'BAI_API_KEY', 'DeepSeek-V4.1-Flash'],
+    ['bai', 'BAI_API_KEY', 'deepseek-v4.1-flash'],
     ['openai', 'OPENAI_API_KEY', 'gpt-5.6-sol'],
     ['anthropic', 'ANTHROPIC_API_KEY', 'claude-opus-5'],
   ] as const)('maps fixed %s to its production model', (provider, key, expectedModel) => {

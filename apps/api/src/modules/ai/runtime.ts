@@ -33,7 +33,7 @@ export function createAiGateway(
   fetchImplementation?: typeof fetch,
 ): AiGateway {
   const geminiModel = env.GEMINI_MODEL ?? env.AI_FAST_MODEL ?? 'gemini-3.8-flash';
-  const baiModel = expertModel(env, 'bai', env.BAI_MODEL, 'DeepSeek-V4.1-Flash');
+  const baiModel = expertModel(env, 'bai', env.BAI_MODEL, 'deepseek-v4.1-flash');
   const openAiModel = expertModel(env, 'openai', env.OPENAI_MODEL, 'gpt-5.6-sol');
   const anthropicModel = expertModel(env, 'anthropic', env.ANTHROPIC_MODEL, 'claude-opus-5');
   const expertPricing = {
