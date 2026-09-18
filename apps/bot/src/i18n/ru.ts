@@ -62,7 +62,6 @@ export const ru = {
   aiCreditUnit: 'кредитов',
   aiControllerExpired: 'Эта панель устарела. Используйте последнюю панель управления.',
   aiPrompt: 'Отправьте вопрос обычным сообщением.',
-  aiWorking: '⌛ Готовим ответ…',
   aiReady: '✅ Готово',
   aiNoChats: 'Предыдущих чатов пока нет.',
   aiHistoryTitle: 'Ваши чаты:',

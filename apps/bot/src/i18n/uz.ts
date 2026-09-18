@@ -61,7 +61,6 @@ export const uz = {
   aiCreditUnit: 'kredit',
   aiControllerExpired: 'Bu boshqaruv paneli eskirgan. Eng oxirgi paneldan foydalaning.',
   aiPrompt: 'Savolingizni oddiy xabar sifatida yuboring.',
-  aiWorking: '⌛ Javob tayyorlanmoqda…',
   aiReady: '✅ Tayyor',
   aiNoChats: 'Oldingi chatlar hali mavjud emas.',
   aiHistoryTitle: 'Chatlaringiz:',

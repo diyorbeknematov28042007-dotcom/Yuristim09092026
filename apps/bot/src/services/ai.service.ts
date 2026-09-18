@@ -108,7 +108,12 @@ async function sendStatusSticker(
       });
     }
   }
-  await context.api.sendChatAction(context.chat!.id, 'typing').catch(() => undefined);
+  try {
+    const indicator = await context.reply(mode === 'fast' ? '✨' : '💥');
+    return indicator.message_id;
+  } catch {
+    await context.api.sendChatAction(context.chat!.id, 'typing').catch(() => undefined);
+  }
   return null;
 }
 
@@ -164,7 +169,12 @@ export async function showAiConversation(
   const completed = history.messages
     .filter((message) => message.status === 'completed' && message.content)
     .slice(-6)
-    .map((message) => `${message.role === 'user' ? '👤' : '🤖'} ${message.content}`)
+    .map(
+      (message) =>
+        `${message.role === 'user' ? '👤' : '🤖'} ${
+          message.role === 'assistant' ? telegramPlainText(message.content) : message.content
+        }`,
+    )
     .join('\n\n');
   const body = completed ? `${conversation.title}\n\n${completed}` : t(language, 'aiChatOpened');
   const chunks = telegramChunks(body);
@@ -219,7 +229,7 @@ export async function sendAiPrompt(
         idempotencyKey,
       );
       if (await deleteStatusSticker(context, stickerMessageId)) stickerMessageId = null;
-      const answer = `${t(language, 'aiReady')}\n\n${result.message.content}\n\n💳 ${t(
+      const answer = `${t(language, 'aiReady')}\n\n${telegramPlainText(result.message.content)}\n\n💳 ${t(
         language,
         'aiCreditsCharged',
       )}: ${credits(result.message.chargedCredits)}`;
@@ -281,6 +291,10 @@ export function telegramChunks(value: string, limit = 3_800): string[] {
   }
   if (remaining) chunks.push(remaining);
   return chunks;
+}
+
+export function telegramPlainText(value: string): string {
+  return value.replaceAll('**', '');
 }
 
 function aiErrorText(language: Language, error: unknown): string {

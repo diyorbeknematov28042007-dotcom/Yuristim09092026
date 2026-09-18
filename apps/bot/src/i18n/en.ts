@@ -63,7 +63,6 @@ export const en = {
   aiCreditUnit: 'credits',
   aiControllerExpired: 'This controller has expired. Use the latest control panel.',
   aiPrompt: 'Send your question as a regular message.',
-  aiWorking: '⌛ Preparing the answer…',
   aiReady: '✅ Ready',
   aiNoChats: 'There are no previous chats yet.',
   aiHistoryTitle: 'Your chats:',

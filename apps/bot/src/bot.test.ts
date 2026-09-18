@@ -28,7 +28,7 @@ import { t } from './i18n/index.js';
 import { mainLawyerKeyboard } from './keyboards/main-lawyer.keyboard.js';
 import { mainUserKeyboard } from './keyboards/main-user.keyboard.js';
 import { servicesKeyboard } from './keyboards/services.keyboard.js';
-import { telegramChunks } from './services/ai.service.js';
+import { telegramChunks, telegramPlainText } from './services/ai.service.js';
 import { displayName } from './services/user-context.service.js';
 
 const botInfo = {
@@ -1066,12 +1066,13 @@ describe('Yuristim AI Telegram UX', () => {
     expect(api.aiMessages).toHaveLength(0);
   });
 
-  it('falls back to typing when sticker config is missing or sticker sending fails', async () => {
+  it('uses a temporary emoji indicator when sticker config is missing or sending fails', async () => {
     const missing = completedUser('en');
     missing.aiStatus = { ...missing.aiStatus, botChatActive: true };
     const first = fixture(missing);
     await first.bot.handleUpdate(textUpdate('Question', 209), botInfo);
-    expect(first.calls.some((call) => call.method === 'sendChatAction')).toBe(true);
+    expect(texts(first.calls)).toContain('✨');
+    expect(first.calls.some((call) => call.method === 'deleteMessage')).toBe(true);
 
     const failed = completedUser('en');
     failed.aiStatus = { ...failed.aiStatus, botChatActive: true };
@@ -1083,8 +1084,27 @@ describe('Yuristim AI Telegram UX', () => {
     } finally {
       console.warn = warn;
     }
-    expect(second.calls.some((call) => call.method === 'sendChatAction')).toBe(true);
+    expect(texts(second.calls)).toContain('✨');
+    expect(second.calls.some((call) => call.method === 'deleteMessage')).toBe(true);
     expect(texts(second.calls).join('\n')).toContain('Sinov AI javobi');
+  });
+
+  it('removes Markdown bold delimiters from Telegram AI answers', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    api.sendAiMessage = async (...args) => {
+      const result = await originalSend(...args);
+      return {
+        ...result,
+        message: { ...result.message, content: '**Muhim:** bu **oddiy** javob.' },
+      };
+    };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate('Savol', 213), botInfo);
+    const output = texts(calls).join('\n');
+    expect(output).toContain('Muhim: bu oddiy javob.');
+    expect(output).not.toContain('**');
   });
 
   it('keeps AI delivery and charging intact when Telegram cleanup fails', async () => {
@@ -1146,5 +1166,9 @@ describe('Yuristim AI Telegram UX', () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.length <= 3_800)).toBe(true);
     expect(chunks.join(' ')).toBe(value);
+  });
+
+  it('normalizes bold Markdown delimiters for Telegram plain text rendering', () => {
+    expect(telegramPlainText('**Muhim:** **javob**')).toBe('Muhim: javob');
   });
 });
