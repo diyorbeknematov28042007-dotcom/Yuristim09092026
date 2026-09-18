@@ -1,6 +1,7 @@
 import type { TelegramIdentityInput } from '@yuristim/db';
 import {
   LANGUAGES,
+  AI_MODES,
   USER_ROLES,
   type BotOnboardingAction,
   type BotVerificationAction,
@@ -15,6 +16,7 @@ import type { CoreAuthService } from '../auth/service.js';
 import type { LawyerService } from '../lawyers/service.js';
 import type { CreditService } from '../credits/service.js';
 import type { MarketplaceService } from '../marketplace/service.js';
+import type { AiService } from '../ai/service.js';
 
 const identitySchema = z
   .object({
@@ -113,6 +115,7 @@ export function registerInternalRoutes(
   lawyerService?: LawyerService,
   creditService?: CreditService,
   marketplaceService?: MarketplaceService,
+  aiService?: AiService,
 ): void {
   app.post('/internal/telegram/users/ensure', async (request, reply) => {
     verifyInternalRequest(request, request.body, internalBotSecret);
@@ -210,6 +213,236 @@ export function registerInternalRoutes(
         );
         const user = await service.getTelegramUserForInternal(params.telegramUserId);
         return { items: await creditService.acceptProducts(user.id, userLanguage(user.language)) };
+      },
+    );
+  }
+
+  if (aiService) {
+    app.get('/internal/ai/providers/status', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      return { providers: await aiService.providerStatus() };
+    });
+
+    app.post('/internal/telegram/users/:telegramUserId/ai/enter', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      parseInput(z.object({}).strict(), request.body ?? {});
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return aiService.enterBot(user.id, userLanguage(user.language));
+    });
+
+    app.post('/internal/telegram/users/:telegramUserId/ai/leave', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      parseInput(z.object({}).strict(), request.body ?? {});
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      await aiService.leaveBot(user.id);
+      return { success: true };
+    });
+
+    app.get('/internal/telegram/users/:telegramUserId/ai/status', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return aiService.botStatus(user.id);
+    });
+
+    app.patch('/internal/telegram/users/:telegramUserId/ai/controller', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const messageIdSchema = z.number().int().positive().safe().nullable();
+      const body = parseInput(
+        z
+          .object({
+            expectedMessageId: messageIdSchema,
+            newMessageId: messageIdSchema,
+          })
+          .strict(),
+        request.body,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return {
+        replaced: await aiService.replaceBotController(
+          user.id,
+          body.expectedMessageId,
+          body.newMessageId,
+        ),
+      };
+    });
+
+    app.get('/internal/telegram/users/:telegramUserId/ai/conversations', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return {
+        items: await aiService.listConversations(user.id, userLanguage(user.language), 20),
+      };
+    });
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/ai/conversations',
+      async (request, reply) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const body = parseInput(
+          z.object({ mode: z.enum(AI_MODES).default('fast') }).strict(),
+          request.body,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return reply.status(201).send({
+          conversation: await aiService.createConversation(
+            user.id,
+            userLanguage(user.language),
+            body.mode,
+          ),
+        });
+      },
+    );
+
+    app.get(
+      '/internal/telegram/users/:telegramUserId/ai/conversations/:conversationId',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z
+            .object({
+              conversationId: z.string().regex(/^aic_[a-f0-9]{24}$/),
+              telegramUserId: telegramUserIdSchema,
+            })
+            .strict(),
+          request.params,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return aiService.getConversation(
+          user.id,
+          params.conversationId,
+          userLanguage(user.language),
+        );
+      },
+    );
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/ai/conversations/:conversationId/resume',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z
+            .object({
+              conversationId: z.string().regex(/^aic_[a-f0-9]{24}$/),
+              telegramUserId: telegramUserIdSchema,
+            })
+            .strict(),
+          request.params,
+        );
+        parseInput(z.object({}).strict(), request.body ?? {});
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return {
+          conversation: await aiService.resumeBot(
+            user.id,
+            params.conversationId,
+            userLanguage(user.language),
+          ),
+        };
+      },
+    );
+
+    app.patch(
+      '/internal/telegram/users/:telegramUserId/ai/conversations/:conversationId/mode',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z
+            .object({
+              conversationId: z.string().regex(/^aic_[a-f0-9]{24}$/),
+              telegramUserId: telegramUserIdSchema,
+            })
+            .strict(),
+          request.params,
+        );
+        const body = parseInput(z.object({ mode: z.enum(AI_MODES) }).strict(), request.body);
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return {
+          conversation: await aiService.switchMode(
+            user.id,
+            params.conversationId,
+            userLanguage(user.language),
+            body.mode,
+          ),
+        };
+      },
+    );
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/ai/conversations/:conversationId/messages',
+      async (request, reply) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z
+            .object({
+              conversationId: z.string().regex(/^aic_[a-f0-9]{24}$/),
+              telegramUserId: telegramUserIdSchema,
+            })
+            .strict(),
+          request.params,
+        );
+        const body = parseInput(
+          z
+            .object({
+              content: z.string().trim().min(1).max(12_000),
+              idempotencyKey: z.string().min(8).max(160),
+            })
+            .strict(),
+          request.body,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        const result = await aiService.send({
+          content: body.content,
+          conversationId: params.conversationId,
+          idempotencyKey: body.idempotencyKey,
+          language: userLanguage(user.language),
+          requestId: request.id,
+          telemetry: (event) => request.log.info(event, 'AI request completed'),
+          userId: user.id,
+        });
+        return reply.status(result.duplicate ? 200 : 201).send(result);
+      },
+    );
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/ai/messages/:messageId/delivery-failure',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z
+            .object({
+              messageId: z.string().regex(/^aim_[a-f0-9]{24}$/),
+              telegramUserId: telegramUserIdSchema,
+            })
+            .strict(),
+          request.params,
+        );
+        parseInput(z.object({}).strict(), request.body ?? {});
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        await aiService.reverseDeliveryFailure(user.id, params.messageId);
+        return { success: true };
       },
     );
   }

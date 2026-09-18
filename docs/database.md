@@ -25,6 +25,10 @@ aniq Yuristim projectda bajarildi.
 - `marketplace_accept_transactions`: yurist accept birliklarining immutable ledgeri.
 - `marketplace_accept_products`: active single-accept va kelajak paketlar katalogi.
 - `payments`: provider-neutral checkout va terminal webhook holatlari.
+- `ai_conversations`: user-owned chat, current mode, title va prompt policy versioni.
+- `ai_messages`: lifecycle, per-message mode/provider metadata, normalized usage va charge.
+- `ai_message_sources`: Phase 8 verified citation layeri uchun bo‘sh-safe foundation.
+- `ai_user_states`: Bot restartidan keyin ham active chat va mode pointeri.
 
 `users.telegram_user_id`, `users.duid`, session token hash va challenge hash unique.
 Session user/expiry hamda login status/expiry uchun indexlar mavjud. `updated_at`
@@ -53,3 +57,7 @@ supabase gen types typescript --local > packages/db/src/database.types.ts
 Shared projectga destructive `db reset` qilinmaydi. Schema o‘zgarishi yangi,
 versionlangan migration bilan kiritiladi va TypeScript types qayta generatsiya
 qilinadi.
+
+AI completion va credit debit bitta database transactionida bajariladi. Duplicate
+completion mavjud ledger reference'ini qaytaradi; failed response debit qilmaydi;
+delivery failure bo‘lsa append-only `reversal` transaction yoziladi.

@@ -4,6 +4,9 @@ export interface ServiceHealthResponse {
   status: ServiceStatus;
   service: string;
   requestId: string;
+  dependencies?: {
+    ai: Record<'fast' | 'expert', boolean>;
+  };
 }
 
 export const LANGUAGES = ['uz', 'ru', 'en'] as const;
@@ -93,6 +96,14 @@ export type ApiErrorCode =
   | 'MARKETPLACE_ACCEPTANCE_NOT_FOUND'
   | 'MARKETPLACE_REVIEW_NOT_ALLOWED'
   | 'INSUFFICIENT_ACCEPT_BALANCE'
+  | 'AI_CONVERSATION_NOT_FOUND'
+  | 'AI_CONVERSATION_BUSY'
+  | 'AI_PROVIDER_TIMEOUT'
+  | 'AI_PROVIDER_RATE_LIMIT'
+  | 'AI_PROVIDER_UNAVAILABLE'
+  | 'AI_PROVIDER_NOT_CONFIGURED'
+  | 'AI_REQUEST_CANCELLED'
+  | 'AI_DELIVERY_FAILED'
   | 'NOT_FOUND'
   | 'INTERNAL_ERROR';
 
@@ -361,3 +372,73 @@ export type BotMarketplaceDraftAction =
   | { action: 'set_additional_details'; additionalDetails: string | null }
   | { action: 'back' }
   | { action: 'cancel' };
+
+export const AI_MODES = ['fast', 'expert'] as const;
+export type AiMode = (typeof AI_MODES)[number];
+
+export const AI_MESSAGE_STATUSES = [
+  'pending',
+  'running',
+  'streaming',
+  'completed',
+  'failed',
+  'cancelled',
+] as const;
+export type AiMessageStatus = (typeof AI_MESSAGE_STATUSES)[number];
+
+export interface AiConversationView {
+  id: string;
+  title: string;
+  mode: AiMode;
+  status: 'active' | 'archived';
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string | null;
+}
+
+export interface AiMessageSourceView {
+  title: string;
+  url: string;
+  sourceType: 'official_legal' | 'official_government' | 'court' | 'secondary' | 'other';
+  publisher: string | null;
+  domain: string | null;
+  citationOrder: number;
+  official: boolean;
+  verified: boolean;
+}
+
+export interface AiMessageView {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  mode: AiMode;
+  status: AiMessageStatus;
+  chargedCredits: number;
+  sourceStatus: 'none' | 'available' | 'unverified';
+  sources: AiMessageSourceView[];
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AiEstimateView {
+  mode: AiMode;
+  estimatedCredits: number;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
+  sufficientBalance: boolean;
+  currentBalance: number;
+}
+
+export interface AiSendResult {
+  conversation: AiConversationView;
+  message: AiMessageView;
+  duplicate: boolean;
+}
+
+export interface AiStatusView {
+  mode: AiMode;
+  activeConversationId: string | null;
+  botChatActive: boolean;
+  availability: Record<AiMode, boolean>;
+  balance: CreditBalanceView;
+}

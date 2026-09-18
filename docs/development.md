@@ -21,12 +21,17 @@ Real key va tokenlar faqat local `.env` yoki deployment environmentida saqlanadi
 - `INTERNAL_BOT_API_SECRET` — kamida 32 belgili Bot/API shared secret
 - `SESSION_TTL_SECONDS` — default 30 kun
 - `LOGIN_CHALLENGE_TTL_SECONDS` — default 10 daqiqa
+- `GEMINI_API_KEY` — Tezkor mode provider secret
+- `OPENAI_API_KEY` yoki `ANTHROPIC_API_KEY` — Ekspert mode provider secret
+- `AI_*` — model, pricing, context, timeout va bounded retry sozlamalari
 
 ### Bot (server-only)
 
 - `TELEGRAM_BOT_TOKEN`
 - `API_BASE_URL`
 - `INTERNAL_BOT_API_SECRET`
+- `AI_API_TIMEOUT_MILLISECONDS` — Bot → API long AI request timeout
+- `MINI_APP_URL` — optional file-analysis redirect
 
 ### Web (public)
 

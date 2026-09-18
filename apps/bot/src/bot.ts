@@ -28,9 +28,14 @@ export interface CreateBotOptions {
   token: string;
   api?: YuristimApi;
   apiTimeoutMilliseconds?: number;
+  aiApiTimeoutMilliseconds?: number;
+  aiFastStickerFileId?: string;
+  aiExpertStickerFileId?: string;
+  aiDocumentStickerFileId?: string;
   privacyUrl?: string;
   publicOfferUrl?: string;
   supportUsername?: string;
+  miniAppUrl?: string;
   termsVersion?: string;
   botInfo?: UserFromGetMe;
   adminTelegramId?: number;
@@ -52,12 +57,23 @@ export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
       ...(options.apiTimeoutMilliseconds
         ? { timeoutMilliseconds: options.apiTimeoutMilliseconds }
         : {}),
+      ...(options.aiApiTimeoutMilliseconds
+        ? { aiTimeoutMilliseconds: options.aiApiTimeoutMilliseconds }
+        : {}),
     });
   const config: BotRuntimeConfig = {
+    ...(options.aiFastStickerFileId ? { aiFastStickerFileId: options.aiFastStickerFileId } : {}),
+    ...(options.aiExpertStickerFileId
+      ? { aiExpertStickerFileId: options.aiExpertStickerFileId }
+      : {}),
+    ...(options.aiDocumentStickerFileId
+      ? { aiDocumentStickerFileId: options.aiDocumentStickerFileId }
+      : {}),
     ...(options.adminTelegramId ? { adminTelegramId: options.adminTelegramId } : {}),
     ...(options.privacyUrl ? { privacyUrl: options.privacyUrl } : {}),
     ...(options.publicOfferUrl ? { publicOfferUrl: options.publicOfferUrl } : {}),
     ...(options.supportUsername ? { supportUsername: options.supportUsername } : {}),
+    ...(options.miniAppUrl ? { miniAppUrl: options.miniAppUrl } : {}),
     termsVersion: options.termsVersion ?? '2026-09',
     marketplaceChannelId: options.marketplaceChannelId,
     marketplaceChannelUrl: options.marketplaceChannelUrl,

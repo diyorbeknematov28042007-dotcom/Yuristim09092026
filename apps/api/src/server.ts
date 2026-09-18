@@ -1,5 +1,6 @@
 import {
   createServerDatabaseClient,
+  SupabaseAiRepository,
   SupabaseCoreRepository,
   SupabaseFinanceRepository,
   SupabaseLawyerRepository,
@@ -13,6 +14,8 @@ import { CreditService } from './modules/credits/service.js';
 import { LawyerService } from './modules/lawyers/service.js';
 import { PaymentService, SandboxPaymentAdapter } from './modules/payments/service.js';
 import { MarketplaceService } from './modules/marketplace/service.js';
+import { createAiGateway } from './modules/ai/runtime.js';
+import { AiService } from './modules/ai/service.js';
 
 const env = loadApiEnv();
 const databaseClient = createServerDatabaseClient({
@@ -31,6 +34,8 @@ const marketplaceService = new MarketplaceService(
   new SupabaseMarketplaceRepository(databaseClient),
 );
 const creditService = new CreditService(financeRepository);
+const aiRepository = new SupabaseAiRepository(databaseClient);
+const aiService = new AiService(aiRepository, createAiGateway(env, aiRepository), creditService);
 const paymentService = new PaymentService(
   financeRepository,
   new SandboxPaymentAdapter(env.PAYMENT_WEBHOOK_SECRET),
@@ -51,6 +56,7 @@ const app = buildApp({
     creditService,
     paymentService,
     marketplaceService,
+    aiService,
   },
   logger: {
     level: env.LOG_LEVEL,

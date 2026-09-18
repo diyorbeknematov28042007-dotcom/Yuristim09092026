@@ -10,8 +10,8 @@ application ichidagi aniq modullarda boshqariladi.
 
 ```text
 Telegram Bot ─┐
-Web/Mini App ─┼──> Yuristim API ──> packages/db ──> Supabase/PostgreSQL
-Admin ────────┘            └──────> packages/ai (kelajakda)
+Web/Mini App ─┼──> Yuristim API ──> packages/db ─> Supabase/PostgreSQL
+Admin ────────┘            └──────> packages/ai ─> AI providerlar
 ```
 
 - `apps/web` server secret saqlamaydi va faqat API contractlardan foydalanadi.
@@ -21,7 +21,8 @@ Admin ────────┘            └──────> packages/ai 
   yagona ishonch boundary'sidir.
 - `packages/db` barcha business querylarni repository interfeysi ortida jamlaydi.
 - `packages/types` secret bo‘lmagan transport contractlarini beradi.
-- `packages/ai` Phase 2'da providersiz kelajak boundary bo‘lib qoladi.
+- `packages/ai` normalized provider adapter, Gemini-only Tezkor routing, hidden
+  Ekspert routing, timeout/retry, pricing va versioned prompt policy'ni boshqaradi.
 
 ## Core auth oqimi
 
@@ -41,9 +42,10 @@ Private business tablelarda RLS `ENABLE` va `FORCE` qilingan. `anon` va
 service-role API repository orqali ishlaydi. Service-role key Web yoki
 `NEXT_PUBLIC_*` configga hech qachon kirmaydi.
 
-Lawyer niyati saqlanishi mumkin, ammo `active_mode=lawyer` Phase 4 verification
-bo‘lmaguncha API tomonidan rad etiladi. Marketplace, credit, payment va AI modeli
-Phase 2 scope'iga kirmaydi.
+Lawyer niyati saqlanishi mumkin, ammo `active_mode=lawyer` verification bo‘lmaguncha
+API tomonidan rad etiladi. AI provider secretlari va hidden routing public API yoki
+Bot response'lariga chiqmaydi; AI balance mutation faqat immutable credit ledger RPC
+orqali amalga oshadi.
 
 ## Deployment boundary
 

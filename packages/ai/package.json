@@ -19,5 +19,8 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src --passWithNoTests"
+  },
+  "dependencies": {
+    "@yuristim/types": "workspace:*"
   }
 }
