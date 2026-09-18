@@ -258,15 +258,32 @@ class MemoryAiRepository implements AiRepository {
   }
 
   setBotState(input: Parameters<AiRepository['setBotState']>[0]): Promise<AiUserStateRow> {
+    const current = this.states.get(input.userId);
     const row: AiUserStateRow = {
       active_conversation_id: input.activeConversationId,
       bot_chat_active: input.active,
       preferred_mode: input.preferredMode,
+      telegram_control_message_id: current?.telegram_control_message_id ?? null,
       updated_at: input.now.toISOString(),
       user_id: input.userId,
     };
     this.states.set(input.userId, row);
     return Promise.resolve(row);
+  }
+
+  replaceTelegramControlMessage(
+    input: Parameters<AiRepository['replaceTelegramControlMessage']>[0],
+  ): Promise<boolean> {
+    const current = this.states.get(input.userId);
+    if (!current || current.telegram_control_message_id !== input.expectedMessageId) {
+      return Promise.resolve(false);
+    }
+    this.states.set(input.userId, {
+      ...current,
+      telegram_control_message_id: input.newMessageId,
+      updated_at: input.now.toISOString(),
+    });
+    return Promise.resolve(true);
   }
 
   private message(
@@ -687,5 +704,18 @@ describe('AiService conversation and charging lifecycle', () => {
       content: '',
       status: 'failed',
     });
+  });
+
+  it('persists and atomically replaces the single Telegram AI controller', async () => {
+    const { service } = fixture();
+    await service.enterBot(userA, 'uz');
+    expect((await service.botStatus(userA)).telegramControlMessageId).toBeNull();
+    await expect(service.replaceBotController(userA, null, 101)).resolves.toBe(true);
+    await expect(service.replaceBotController(userA, null, 202)).resolves.toBe(false);
+    expect((await service.botStatus(userA)).telegramControlMessageId).toBe(101);
+    await expect(service.replaceBotController(userA, 101, 202)).resolves.toBe(true);
+    expect((await service.botStatus(userA)).telegramControlMessageId).toBe(202);
+    await service.leaveBot(userA);
+    expect((await service.botStatus(userA)).telegramControlMessageId).toBeNull();
   });
 });

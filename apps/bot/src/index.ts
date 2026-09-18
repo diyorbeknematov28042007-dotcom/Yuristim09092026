@@ -10,6 +10,15 @@ async function start(): Promise<void> {
       adminTelegramId: env.ADMIN_TELEGRAM_ID,
       apiTimeoutMilliseconds: env.API_TIMEOUT_MILLISECONDS,
       aiApiTimeoutMilliseconds: env.AI_API_TIMEOUT_MILLISECONDS,
+      ...(env.TELEGRAM_AI_FAST_STICKER_FILE_ID
+        ? { aiFastStickerFileId: env.TELEGRAM_AI_FAST_STICKER_FILE_ID }
+        : {}),
+      ...(env.TELEGRAM_AI_EXPERT_STICKER_FILE_ID
+        ? { aiExpertStickerFileId: env.TELEGRAM_AI_EXPERT_STICKER_FILE_ID }
+        : {}),
+      ...(env.TELEGRAM_AI_DOCUMENT_STICKER_FILE_ID
+        ? { aiDocumentStickerFileId: env.TELEGRAM_AI_DOCUMENT_STICKER_FILE_ID }
+        : {}),
       internalApiSecret: env.INTERNAL_BOT_API_SECRET,
       marketplaceChannelId: env.MARKETPLACE_CHANNEL_ID,
       marketplaceChannelUrl: env.MARKETPLACE_CHANNEL_URL,

@@ -364,4 +364,23 @@ export class SupabaseAiRepository implements AiRepository {
       .single();
     return required(data, error);
   }
+
+  async replaceTelegramControlMessage(
+    input: Parameters<AiRepository['replaceTelegramControlMessage']>[0],
+  ): Promise<boolean> {
+    let query = this.client
+      .from('ai_user_states')
+      .update({
+        telegram_control_message_id: input.newMessageId,
+        updated_at: input.now.toISOString(),
+      })
+      .eq('user_id', input.userId);
+    query =
+      input.expectedMessageId === null
+        ? query.is('telegram_control_message_id', null)
+        : query.eq('telegram_control_message_id', input.expectedMessageId);
+    const { data, error } = await query.select('user_id').maybeSingle();
+    if (error) fail(error);
+    return data !== null;
+  }
 }

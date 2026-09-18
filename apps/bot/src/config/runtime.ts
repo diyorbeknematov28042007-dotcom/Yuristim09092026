@@ -7,4 +7,7 @@ export interface BotRuntimeConfig {
   marketplaceChannelId: number;
   marketplaceChannelUrl: string;
   miniAppUrl?: string;
+  aiFastStickerFileId?: string;
+  aiExpertStickerFileId?: string;
+  aiDocumentStickerFileId?: string;
 }

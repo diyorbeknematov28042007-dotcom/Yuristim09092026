@@ -56,6 +56,7 @@ function fixture() {
   const getTelegramUserForInternal = vi.fn().mockResolvedValue({ id: userId, language: 'uz' });
   const auth = { getTelegramUserForInternal } as unknown as CoreAuthService;
   const send = vi.fn().mockResolvedValue(sendResult);
+  const botStatus = { ...status, telegramControlMessageId: 321 };
   const ai = {
     availability: async () => ({ expert: true, fast: true }),
     providerStatus: vi.fn().mockResolvedValue({
@@ -66,6 +67,8 @@ function fixture() {
     }),
     send,
     status: vi.fn().mockResolvedValue(status),
+    botStatus: vi.fn().mockResolvedValue(botStatus),
+    replaceBotController: vi.fn().mockResolvedValue(true),
   } as unknown as AiService;
   const app = buildApp({
     core: {
@@ -76,7 +79,7 @@ function fixture() {
     },
     logger: false,
   });
-  return { ai, app, getTelegramUserForInternal, send };
+  return { ai, app, botStatus, getTelegramUserForInternal, send };
 }
 
 function signedHeaders(method: string, path: string, body?: unknown) {
@@ -94,7 +97,7 @@ describe('AI internal bot routes', () => {
   });
 
   it('keeps Bot-to-API AI status behind the existing HMAC contract', async () => {
-    const { app, getTelegramUserForInternal } = fixture();
+    const { app, botStatus, getTelegramUserForInternal } = fixture();
     apps.push(app);
     const path = `/internal/telegram/users/${telegramUserId}/ai/status`;
     const response = await app.inject({
@@ -103,8 +106,27 @@ describe('AI internal bot routes', () => {
       url: path,
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual(status);
+    expect(response.json()).toEqual(botStatus);
     expect(getTelegramUserForInternal).toHaveBeenCalledWith(telegramUserId);
+  });
+
+  it('atomically replaces controller state behind HMAC without exposing it publicly', async () => {
+    const { ai, app } = fixture();
+    apps.push(app);
+    const path = `/internal/telegram/users/${telegramUserId}/ai/controller`;
+    const body = { expectedMessageId: 321, newMessageId: 654 };
+    const response = await app.inject({
+      headers: signedHeaders('PATCH', path, body),
+      method: 'PATCH',
+      payload: body,
+      url: path,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ replaced: true });
+    expect(ai.replaceBotController).toHaveBeenCalledWith(userId, 321, 654);
+
+    const publicResponse = await app.inject({ method: 'GET', url: '/ai/status' });
+    expect(publicResponse.body).not.toContain('telegramControlMessageId');
   });
 
   it('keeps /ready healthy while reporting sanitized partial AI availability', async () => {

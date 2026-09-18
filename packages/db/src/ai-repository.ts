@@ -130,4 +130,10 @@ export interface AiRepository {
     active: boolean;
     now: Date;
   }): Promise<AiUserStateRow>;
+  replaceTelegramControlMessage(input: {
+    userId: string;
+    expectedMessageId: number | null;
+    newMessageId: number | null;
+    now: Date;
+  }): Promise<boolean>;
 }

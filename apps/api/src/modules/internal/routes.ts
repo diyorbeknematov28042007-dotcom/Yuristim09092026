@@ -253,7 +253,33 @@ export function registerInternalRoutes(
         request.params,
       );
       const user = await service.getTelegramUserForInternal(params.telegramUserId);
-      return aiService.status(user.id);
+      return aiService.botStatus(user.id);
+    });
+
+    app.patch('/internal/telegram/users/:telegramUserId/ai/controller', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const messageIdSchema = z.number().int().positive().safe().nullable();
+      const body = parseInput(
+        z
+          .object({
+            expectedMessageId: messageIdSchema,
+            newMessageId: messageIdSchema,
+          })
+          .strict(),
+        request.body,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return {
+        replaced: await aiService.replaceBotController(
+          user.id,
+          body.expectedMessageId,
+          body.newMessageId,
+        ),
+      };
     });
 
     app.get('/internal/telegram/users/:telegramUserId/ai/conversations', async (request) => {

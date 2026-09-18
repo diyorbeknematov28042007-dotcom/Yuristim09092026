@@ -36,6 +36,10 @@ export interface EnsureUserResult {
   user: UserView;
 }
 
+export interface BotAiStatusView extends AiStatusView {
+  telegramControlMessageId: number | null;
+}
+
 export interface YuristimApi {
   ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult>;
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext>;
@@ -100,10 +104,15 @@ export interface YuristimApi {
   recordMarketplaceChannelFailure(postId: string): Promise<void>;
   enterAi(telegramUserId: number): Promise<{
     conversation: AiConversationView;
-    status: AiStatusView;
+    status: BotAiStatusView;
   }>;
   leaveAi(telegramUserId: number): Promise<void>;
-  getAiStatus(telegramUserId: number): Promise<AiStatusView>;
+  getAiStatus(telegramUserId: number): Promise<BotAiStatusView>;
+  replaceAiController(
+    telegramUserId: number,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean>;
   getAiConversations(telegramUserId: number): Promise<AiConversationView[]>;
   createAiConversation(
     telegramUserId: number,
@@ -367,6 +376,7 @@ const aiStatusSchema = z.object({
   balance: creditBalanceSchema,
   botChatActive: z.boolean(),
   mode: z.enum(['fast', 'expert']),
+  telegramControlMessageId: z.number().int().positive().safe().nullable(),
 });
 const aiSendSchema = z.object({
   conversation: aiConversationSchema,
@@ -682,11 +692,24 @@ export class YuristimApiClient implements YuristimApi {
     await this.request('POST', `/internal/telegram/users/${telegramUserId}/ai/leave`, {});
   }
 
-  async getAiStatus(telegramUserId: number): Promise<AiStatusView> {
+  async getAiStatus(telegramUserId: number): Promise<BotAiStatusView> {
     return this.parse(
       aiStatusSchema,
       await this.request('GET', `/internal/telegram/users/${telegramUserId}/ai/status`),
     );
+  }
+
+  async replaceAiController(
+    telegramUserId: number,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean> {
+    const payload = await this.request(
+      'PATCH',
+      `/internal/telegram/users/${telegramUserId}/ai/controller`,
+      { expectedMessageId, newMessageId },
+    );
+    return this.parse(z.object({ replaced: z.boolean() }), payload).replaced;
   }
 
   async getAiConversations(telegramUserId: number): Promise<AiConversationView[]> {

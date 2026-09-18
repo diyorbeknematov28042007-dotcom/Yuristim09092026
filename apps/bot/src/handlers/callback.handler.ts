@@ -40,6 +40,8 @@ import {
   showMarketplaceUserHome,
 } from '../services/marketplace.service.js';
 import {
+  isCurrentAiController,
+  leaveAiChat,
   showAiConversation,
   showAiHistory,
   showAiHome,
@@ -57,10 +59,20 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       });
       return;
     }
-    await context.answerCallbackQuery();
-
     let data = await context.yuristimApi.getTelegramUserContext(context.from.id);
     let language = data.user.language ?? telegramLanguage(context.from.language_code);
+    const controllerCallbacks = new Set([
+      'ai:back',
+      'ai:new',
+      'ai:history',
+      'ai:mode:fast',
+      'ai:mode:expert',
+    ]);
+    if (controllerCallbacks.has(callback) && !(await isCurrentAiController(context))) {
+      await context.answerCallbackQuery({ text: t(language, 'aiControllerExpired') });
+      return;
+    }
+    await context.answerCallbackQuery();
 
     if (callback.startsWith('lang:')) {
       language = callback.slice(5) as Language;
@@ -147,7 +159,7 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       return;
     }
     if (callback === 'ai:back') {
-      await context.yuristimApi.leaveAi(context.from.id);
+      await leaveAiChat(context);
       await showMainMenu(context, data);
       return;
     }

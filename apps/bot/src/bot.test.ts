@@ -2,7 +2,6 @@ import type {
   AiConversationView,
   AiMessageView,
   AiSendResult,
-  AiStatusView,
   BotLawyerContext,
   BotOnboardingAction,
   BotUserContext,
@@ -19,6 +18,7 @@ import type {
 import type { Update, UserFromGetMe } from 'grammy/types';
 import { describe, expect, it } from 'vitest';
 import {
+  type BotAiStatusView,
   YuristimApiError,
   type EnsureUserResult,
   type YuristimApi,
@@ -122,12 +122,13 @@ class FakeApi implements YuristimApi {
     },
   ];
   aiMessages: AiMessageView[] = [];
-  aiStatus: AiStatusView = {
+  aiStatus: BotAiStatusView = {
     activeConversationId: 'aic_000000000000000000000001',
     availability: { expert: true, fast: true },
     balance: this.creditBalance,
     botChatActive: false,
     mode: 'fast',
+    telegramControlMessageId: null,
   };
   aiDeliveryFailures: string[] = [];
 
@@ -281,7 +282,7 @@ class FakeApi implements YuristimApi {
     return Promise.resolve(this.acceptProducts);
   }
 
-  enterAi(): Promise<{ conversation: AiConversationView; status: AiStatusView }> {
+  enterAi(): Promise<{ conversation: AiConversationView; status: BotAiStatusView }> {
     this.aiStatus = { ...this.aiStatus, botChatActive: true };
     return Promise.resolve({ conversation: this.aiConversations[0]!, status: this.aiStatus });
   }
@@ -291,8 +292,18 @@ class FakeApi implements YuristimApi {
     return Promise.resolve();
   }
 
-  getAiStatus(): Promise<AiStatusView> {
+  getAiStatus(): Promise<BotAiStatusView> {
     return Promise.resolve(this.aiStatus);
+  }
+
+  replaceAiController(
+    _telegramUserId: number,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean> {
+    if (this.aiStatus.telegramControlMessageId !== expectedMessageId) return Promise.resolve(false);
+    this.aiStatus = { ...this.aiStatus, telegramControlMessageId: newMessageId };
+    return Promise.resolve(true);
   }
 
   getAiConversations(): Promise<AiConversationView[]> {
@@ -435,10 +446,19 @@ interface TelegramCall {
   payload: Record<string, unknown>;
 }
 
-function fixture(api = new FakeApi()) {
+interface FixtureOptions {
+  fastStickerFileId?: string;
+  expertStickerFileId?: string;
+  failStickerSend?: boolean;
+  failDeleteMessage?: boolean;
+}
+
+function fixture(api = new FakeApi(), options: FixtureOptions = {}) {
   const bot = createBot({
     api,
     apiBaseUrl: 'http://localhost:3001',
+    ...(options.fastStickerFileId ? { aiFastStickerFileId: options.fastStickerFileId } : {}),
+    ...(options.expertStickerFileId ? { aiExpertStickerFileId: options.expertStickerFileId } : {}),
     botInfo,
     internalApiSecret: 'test-internal-api-secret-32-characters',
     marketplaceChannelId: -1000000000001,
@@ -450,7 +470,13 @@ function fixture(api = new FakeApi()) {
   const calls: TelegramCall[] = [];
   bot.api.config.use(async (_previous, method, payload) => {
     calls.push({ method, payload: payload as Record<string, unknown> });
-    if (method === 'sendMessage') {
+    if (method === 'sendSticker' && options.failStickerSend) {
+      throw new Error('Sticker send failed');
+    }
+    if (method === 'deleteMessage' && options.failDeleteMessage) {
+      throw new Error('Delete failed');
+    }
+    if (method === 'sendMessage' || method === 'sendSticker') {
       return {
         ok: true,
         result: {
@@ -458,7 +484,19 @@ function fixture(api = new FakeApi()) {
           date: 1_789_000_000,
           from: botInfo,
           message_id: calls.length,
-          text: String((payload as { text?: string }).text ?? ''),
+          ...(method === 'sendMessage'
+            ? { text: String((payload as { text?: string }).text ?? '') }
+            : {
+                sticker: {
+                  file_id: String((payload as { sticker?: string }).sticker ?? 'sticker'),
+                  file_unique_id: 'sticker-unique',
+                  height: 512,
+                  is_animated: false,
+                  is_video: false,
+                  type: 'regular',
+                  width: 512,
+                },
+              }),
         },
       } as never;
     }
@@ -921,6 +959,14 @@ describe('Yuristim AI Telegram UX', () => {
     return api;
   }
 
+  function controllerCalls(calls: TelegramCall[]): TelegramCall[] {
+    return calls.filter(
+      (call) =>
+        call.method === 'sendMessage' &&
+        JSON.stringify(call.payload.reply_markup).includes('ai:new'),
+    );
+  }
+
   it.each(['uz', 'ru', 'en'] as const)('opens the localized AI entry in %s', async (language) => {
     const api = completedUser(language);
     const { bot, calls } = fixture(api);
@@ -929,33 +975,158 @@ describe('Yuristim AI Telegram UX', () => {
     expect(texts(calls).join('\n')).toContain(t(language, 'aiTitle'));
     expect(JSON.stringify(calls)).toContain(t(language, 'aiNewChat'));
     expect(JSON.stringify(calls)).toContain(t(language, 'aiHistory'));
+    expect(JSON.stringify(calls)).toContain(t(language, 'aiSwitchToExpert'));
+    expect(controllerCalls(calls)).toHaveLength(1);
+    expect(api.aiStatus.telegramControlMessageId).not.toBeNull();
   });
 
-  it('pseudo-streams progress then edits it with the final answer and charge', async () => {
+  it('removes the old controller, uses one Fast sticker, then restores the controller last', async () => {
     const api = completedUser('uz');
-    api.aiStatus = { ...api.aiStatus, botChatActive: true };
-    const { bot, calls } = fixture(api);
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 777 };
+    const { bot, calls } = fixture(api, { fastStickerFileId: 'fast-sticker' });
     await bot.handleUpdate(textUpdate('Mehnat shartnomasi nima?', 201), botInfo);
-    expect(texts(calls)).toContain(t('uz', 'aiWorking'));
+    expect(calls.filter((call) => call.method === 'sendSticker')).toHaveLength(1);
+    expect(calls.find((call) => call.method === 'sendSticker')?.payload.sticker).toBe(
+      'fast-sticker',
+    );
+    expect(
+      calls.some((call) => call.method === 'deleteMessage' && call.payload.message_id === 777),
+    ).toBe(true);
     expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
     expect(texts(calls).join('\n')).toContain(`${t('uz', 'aiCreditsCharged')}: 1`);
     expect(api.aiMessages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(calls.at(-1)?.method).toBe('sendMessage');
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+    const stickerIndex = calls.findIndex((call) => call.method === 'sendSticker');
+    const stickerMessageId = stickerIndex + 1;
+    const stickerDeleteIndex = calls.findIndex(
+      (call) => call.method === 'deleteMessage' && call.payload.message_id === stickerMessageId,
+    );
+    const answerIndex = calls.findIndex(
+      (call) => call.method === 'sendMessage' && String(call.payload.text).includes('Sinov AI'),
+    );
+    expect(stickerDeleteIndex).toBeGreaterThan(stickerIndex);
+    expect(stickerDeleteIndex).toBeLessThan(answerIndex);
   });
 
   it('switches mode, opens history, creates an isolated chat, and leaves through Back', async () => {
     const api = completedUser('en');
-    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 202 };
     const { bot, calls } = fixture(api);
     await bot.handleUpdate(callbackUpdate('ai:mode:expert', 202), botInfo);
     expect(api.aiStatus.mode).toBe('expert');
-    await bot.handleUpdate(callbackUpdate('ai:history', 203), botInfo);
+    await bot.handleUpdate(
+      callbackUpdate('ai:history', api.aiStatus.telegramControlMessageId!),
+      botInfo,
+    );
     expect(texts(calls)).toContain(t('en', 'aiHistoryTitle'));
-    await bot.handleUpdate(callbackUpdate('ai:new', 204), botInfo);
+    await bot.handleUpdate(callbackUpdate('nav:ai', 204), botInfo);
+    await bot.handleUpdate(
+      callbackUpdate('ai:new', api.aiStatus.telegramControlMessageId!),
+      botInfo,
+    );
     expect(api.aiConversations).toHaveLength(2);
     expect(api.aiMessages).toHaveLength(0);
-    await bot.handleUpdate(callbackUpdate('ai:back', 205), botInfo);
+    await bot.handleUpdate(
+      callbackUpdate('ai:back', api.aiStatus.telegramControlMessageId!),
+      botInfo,
+    );
     expect(api.aiStatus.botChatActive).toBe(false);
     expect(texts(calls)).toContain(t('en', 'mainTitle'));
+  });
+
+  it('keeps the controller after the last chunk of a long response', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    api.sendAiMessage = async (...args) => {
+      const result = await originalSend(...args);
+      return { ...result, message: { ...result.message, content: 'uzun '.repeat(2_000) } };
+    };
+    const { bot, calls } = fixture(api, { fastStickerFileId: 'fast-sticker' });
+    await bot.handleUpdate(textUpdate('Batafsil javob bering', 207), botInfo);
+    const answerCalls = calls.filter(
+      (call) => call.method === 'sendMessage' && !call.payload.reply_markup,
+    );
+    expect(answerCalls.length).toBeGreaterThan(1);
+    expect(calls.at(-1)?.method).toBe('sendMessage');
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+  });
+
+  it('cleans the Expert sticker and restores the controller after provider failure', async () => {
+    const api = completedUser('ru');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, mode: 'expert' };
+    api.sendAiMessage = () => Promise.reject(new YuristimApiError('AI_PROVIDER_UNAVAILABLE', 503));
+    const { bot, calls } = fixture(api, { expertStickerFileId: 'expert-sticker' });
+    await bot.handleUpdate(textUpdate('Сложный вопрос', 208), botInfo);
+    expect(calls.filter((call) => call.method === 'sendSticker')).toHaveLength(1);
+    expect(calls.some((call) => call.method === 'deleteMessage')).toBe(true);
+    expect(texts(calls)).toContain(t('ru', 'aiProviderUnavailable'));
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+    expect(api.aiMessages).toHaveLength(0);
+  });
+
+  it('falls back to typing when sticker config is missing or sticker sending fails', async () => {
+    const missing = completedUser('en');
+    missing.aiStatus = { ...missing.aiStatus, botChatActive: true };
+    const first = fixture(missing);
+    await first.bot.handleUpdate(textUpdate('Question', 209), botInfo);
+    expect(first.calls.some((call) => call.method === 'sendChatAction')).toBe(true);
+
+    const failed = completedUser('en');
+    failed.aiStatus = { ...failed.aiStatus, botChatActive: true };
+    const second = fixture(failed, { failStickerSend: true, fastStickerFileId: 'bad-sticker' });
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      await second.bot.handleUpdate(textUpdate('Question', 210), botInfo);
+    } finally {
+      console.warn = warn;
+    }
+    expect(second.calls.some((call) => call.method === 'sendChatAction')).toBe(true);
+    expect(texts(second.calls).join('\n')).toContain('Sinov AI javobi');
+  });
+
+  it('keeps AI delivery and charging intact when Telegram cleanup fails', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 700 };
+    const { bot, calls } = fixture(api, {
+      failDeleteMessage: true,
+      fastStickerFileId: 'fast-sticker',
+    });
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      await bot.handleUpdate(textUpdate('Savol', 212), botInfo);
+    } finally {
+      console.warn = warn;
+    }
+    expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
+    expect(api.aiMessages.find((message) => message.role === 'assistant')?.chargedCredits).toBe(1);
+    expect(api.aiDeliveryFailures).toHaveLength(0);
+    expect(calls.some((call) => call.method === 'editMessageReplyMarkup')).toBe(true);
+    expect(calls.filter((call) => call.method === 'deleteMessage').length).toBeGreaterThan(1);
+  });
+
+  it('ignores a stale controller callback without changing the conversation mode', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 500 };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('ai:mode:expert', 499), botInfo);
+    expect(api.aiStatus.mode).toBe('fast');
+    expect(JSON.stringify(calls)).toContain(t('uz', 'aiControllerExpired'));
+  });
+
+  it('reconciles a persisted controller after a bot restart without duplicates', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, telegramControlMessageId: 880 };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate(t('uz', 'ai'), 211), botInfo);
+    expect(
+      calls.some((call) => call.method === 'deleteMessage' && call.payload.message_id === 880),
+    ).toBe(true);
+    expect(controllerCalls(calls)).toHaveLength(1);
+    expect(api.aiStatus.telegramControlMessageId).not.toBe(880);
   });
 
   it('redirects Telegram documents to Mini App/Web without uploading for AI analysis', async () => {
@@ -965,6 +1136,8 @@ describe('Yuristim AI Telegram UX', () => {
     await bot.handleUpdate(documentUpdate(206, 'application/pdf', 'contract.pdf'), botInfo);
     expect(texts(calls)).toContain(t('ru', 'aiFileWebOnly'));
     expect(api.uploads).toHaveLength(0);
+    expect(calls.some((call) => call.method === 'sendSticker')).toBe(false);
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
   });
 
   it('chunks long plain text without truncating content or exceeding Telegram safety limit', () => {

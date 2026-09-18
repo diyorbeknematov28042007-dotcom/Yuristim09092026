@@ -33,6 +33,10 @@ import type {
 import { AppError } from '../../lib/errors.js';
 import type { CreditService } from '../credits/service.js';
 
+export interface AiBotStatusView extends AiStatusView {
+  telegramControlMessageId: number | null;
+}
+
 const defaultTitles: Record<Language, string> = {
   en: 'New chat',
   ru: 'Новый чат',
@@ -217,7 +221,7 @@ export class AiService {
   async enterBot(
     userId: string,
     language: Language,
-  ): Promise<{ conversation: AiConversationView; status: AiStatusView }> {
+  ): Promise<{ conversation: AiConversationView; status: AiBotStatusView }> {
     const state = await this.repository.getUserState(userId);
     let conversation = state?.active_conversation_id
       ? await this.repository.findConversationById(userId, state.active_conversation_id)
@@ -241,7 +245,7 @@ export class AiService {
     }
     return {
       conversation: conversationView(conversation, language),
-      status: await this.status(userId),
+      status: await this.botStatus(userId),
     };
   }
 
@@ -269,6 +273,38 @@ export class AiService {
       activeConversationId: state?.active_conversation_id ?? null,
       now: this.now(),
       preferredMode: (state?.preferred_mode as AiMode | undefined) ?? 'fast',
+      userId,
+    });
+    if (state?.telegram_control_message_id) {
+      await this.repository.replaceTelegramControlMessage({
+        expectedMessageId: state.telegram_control_message_id,
+        newMessageId: null,
+        now: this.now(),
+        userId,
+      });
+    }
+  }
+
+  async botStatus(userId: string): Promise<AiBotStatusView> {
+    const [status, state] = await Promise.all([
+      this.status(userId),
+      this.repository.getUserState(userId),
+    ]);
+    return {
+      ...status,
+      telegramControlMessageId: state?.telegram_control_message_id ?? null,
+    };
+  }
+
+  replaceBotController(
+    userId: string,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean> {
+    return this.repository.replaceTelegramControlMessage({
+      expectedMessageId,
+      newMessageId,
+      now: this.now(),
       userId,
     });
   }

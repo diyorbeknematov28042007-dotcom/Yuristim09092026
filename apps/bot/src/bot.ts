@@ -29,6 +29,9 @@ export interface CreateBotOptions {
   api?: YuristimApi;
   apiTimeoutMilliseconds?: number;
   aiApiTimeoutMilliseconds?: number;
+  aiFastStickerFileId?: string;
+  aiExpertStickerFileId?: string;
+  aiDocumentStickerFileId?: string;
   privacyUrl?: string;
   publicOfferUrl?: string;
   supportUsername?: string;
@@ -59,6 +62,13 @@ export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
         : {}),
     });
   const config: BotRuntimeConfig = {
+    ...(options.aiFastStickerFileId ? { aiFastStickerFileId: options.aiFastStickerFileId } : {}),
+    ...(options.aiExpertStickerFileId
+      ? { aiExpertStickerFileId: options.aiExpertStickerFileId }
+      : {}),
+    ...(options.aiDocumentStickerFileId
+      ? { aiDocumentStickerFileId: options.aiDocumentStickerFileId }
+      : {}),
     ...(options.adminTelegramId ? { adminTelegramId: options.adminTelegramId } : {}),
     ...(options.privacyUrl ? { privacyUrl: options.privacyUrl } : {}),
     ...(options.publicOfferUrl ? { publicOfferUrl: options.publicOfferUrl } : {}),
