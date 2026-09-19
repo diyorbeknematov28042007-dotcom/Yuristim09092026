@@ -4,6 +4,7 @@ import type {
   AiSendResult,
   BotLawyerContext,
   BotOnboardingAction,
+  BotRuntimeContext,
   BotUserContext,
   BotVerificationAction,
   CreditBalanceView,
@@ -16,7 +17,7 @@ import type {
   UserView,
 } from '@yuristim/types';
 import type { Update, UserFromGetMe } from 'grammy/types';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type BotAiStatusView,
   YuristimApiError,
@@ -131,6 +132,7 @@ class FakeApi implements YuristimApi {
     telegramControlMessageId: null,
   };
   aiDeliveryFailures: string[] = [];
+  runtimeContextCalls = 0;
 
   ensureTelegramUser(identity: { telegramUserId: number }): Promise<EnsureUserResult> {
     this.ensuredTelegramIds.push(identity.telegramUserId);
@@ -140,6 +142,34 @@ class FakeApi implements YuristimApi {
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext> {
     this.requestedTelegramIds.push(telegramUserId);
     return Promise.resolve(this.data);
+  }
+
+  getRuntimeContext(): Promise<BotRuntimeContext> {
+    this.runtimeContextCalls += 1;
+    const verificationStatus =
+      this.lawyer.verification?.status ?? this.lawyer.profile?.verificationStatus ?? null;
+    return Promise.resolve({
+      ai: {
+        activeConversationId: this.aiStatus.activeConversationId,
+        botChatActive: this.aiStatus.botChatActive,
+        mode: this.aiStatus.mode,
+        telegramControlMessageId: this.aiStatus.telegramControlMessageId,
+      },
+      lawyer: {
+        draftStep:
+          this.lawyer.verification?.status === 'draft'
+            ? (this.lawyer.verification.draft.step ?? null)
+            : null,
+        verificationStatus,
+      },
+      marketplace: { draftStep: null },
+      user: {
+        activeMode: this.data.user.activeMode,
+        language: this.data.user.language,
+        onboardingRole: this.data.user.onboardingRole,
+        onboardingStatus: this.data.user.onboardingStatus,
+      },
+    });
   }
 
   updateOnboarding(telegramUserId: number, action: BotOnboardingAction): Promise<BotUserContext> {
@@ -570,6 +600,23 @@ function textUpdate(text: string, updateId: number): Update {
   };
 }
 
+function textUpdateForUser(text: string, updateId: number, telegramUserId: number): Update {
+  return {
+    message: {
+      chat: { first_name: `User ${telegramUserId}`, id: telegramUserId, type: 'private' },
+      date: 1_789_000_000,
+      from: {
+        first_name: `User ${telegramUserId}`,
+        id: telegramUserId,
+        is_bot: false,
+      },
+      message_id: updateId,
+      text,
+    },
+    update_id: updateId,
+  };
+}
+
 function documentUpdate(
   updateId: number,
   mimeType = 'application/pdf',
@@ -857,7 +904,7 @@ describe('menus and callback security', () => {
 
   it('maps API failure to safe localized UX without exposing technical detail', async () => {
     const api = new FakeApi();
-    api.getTelegramUserContext = () => Promise.reject(new YuristimApiError('API_UNAVAILABLE', 503));
+    api.getRuntimeContext = () => Promise.reject(new YuristimApiError('API_UNAVAILABLE', 503));
     const errorLog = console.error;
     console.error = () => undefined;
     try {
@@ -1170,5 +1217,168 @@ describe('Yuristim AI Telegram UX', () => {
 
   it('normalizes bold Markdown delimiters for Telegram plain text rendering', () => {
     expect(telegramPlainText('**Muhim:** **javob**')).toBe('Muhim: javob');
+  });
+});
+
+describe('Phase 7 latency safeguards', () => {
+  function completedApi(): FakeApi {
+    const api = new FakeApi();
+    api.data.user = user({
+      language: 'uz',
+      onboardingRole: 'user',
+      onboardingStatus: 'completed',
+    });
+    return api;
+  }
+
+  it('acknowledges a callback before a slow API context dependency', async () => {
+    const api = completedApi();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.getTelegramUserContext = async () => {
+      await gate;
+      return api.data;
+    };
+    const { bot, calls } = fixture(api);
+    const handling = bot.handleUpdate(callbackUpdate('nav:settings', 600), botInfo);
+
+    await vi.waitFor(() => {
+      expect(calls[0]?.method).toBe('answerCallbackQuery');
+    });
+    expect(calls.some((call) => call.method === 'editMessageText')).toBe(false);
+    release();
+    await handling;
+    expect(texts(calls)).toContain(t('uz', 'settingsTitle'));
+  });
+
+  it('dispatches an active AI prompt without legacy context, lawyer, or pre-provider status reads', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const legacyContext = vi.spyOn(api, 'getTelegramUserContext');
+    const lawyerContext = vi.spyOn(api, 'getLawyerContext');
+    const originalSend = api.sendAiMessage.bind(api);
+    let providerStarted = false;
+    api.sendAiMessage = async (...args) => {
+      providerStarted = true;
+      return originalSend(...args);
+    };
+    const aiStatus = vi.spyOn(api, 'getAiStatus').mockImplementation(() => {
+      expect(providerStarted).toBe(true);
+      return Promise.resolve(api.aiStatus);
+    });
+
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate('Faol chat savoli', 601), botInfo);
+
+    expect(api.runtimeContextCalls).toBe(1);
+    expect(legacyContext).not.toHaveBeenCalled();
+    expect(lawyerContext).not.toHaveBeenCalled();
+    expect(aiStatus).toHaveBeenCalled();
+    expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
+  });
+
+  it('does not let user A long AI work block user B navigation', async () => {
+    const api = completedApi();
+    const baseRuntime = api.getRuntimeContext.bind(api);
+    api.getRuntimeContext = async (telegramUserId) => {
+      const runtime = await baseRuntime();
+      return {
+        ...runtime,
+        ai: {
+          ...runtime.ai,
+          botChatActive: telegramUserId === telegramUser.id,
+        },
+      };
+    };
+    const originalSend = api.sendAiMessage.bind(api);
+    let release!: () => void;
+    let started!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const providerGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.sendAiMessage = async (...args) => {
+      started();
+      await providerGate;
+      return originalSend(...args);
+    };
+    const { bot, calls } = fixture(api);
+    const userA = bot.handleUpdate(
+      textUpdateForUser('Uzoq AI savoli', 602, telegramUser.id),
+      botInfo,
+    );
+    await providerStarted;
+    const userB = bot.handleUpdate(textUpdateForUser('unknown', 603, 987_654_321), botInfo);
+
+    await userB;
+    expect(texts(calls)).toContain(t('uz', 'unknownMessage'));
+    release();
+    await userA;
+  });
+
+  it('keeps conflicting updates from the same user ordered without duplicate execution', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    let release!: () => void;
+    let firstStarted!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    let calls = 0;
+    let active = 0;
+    let maxActive = 0;
+    api.sendAiMessage = async (...args) => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (calls === 1) {
+        firstStarted();
+        await firstGate;
+      }
+      const result = await originalSend(...args);
+      active -= 1;
+      return result;
+    };
+    const { bot } = fixture(api);
+    const first = bot.handleUpdate(textUpdate('Birinchi savol', 604), botInfo);
+    await started;
+    const second = bot.handleUpdate(textUpdate('Ikkinchi savol', 605), botInfo);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toBe(2);
+    expect(maxActive).toBe(1);
+    expect(api.aiMessages.filter((message) => message.role === 'assistant')).toHaveLength(2);
+  });
+
+  it('starts AI execution while controller cleanup is still pending', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 700 };
+    let release!: () => void;
+    const cleanupGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalReplace = api.replaceAiController.bind(api);
+    api.replaceAiController = async (...args) => {
+      if (args[1] === 700) await cleanupGate;
+      return originalReplace(...args);
+    };
+    const send = vi.spyOn(api, 'sendAiMessage');
+    const { bot } = fixture(api);
+    const handling = bot.handleUpdate(textUpdate('Savol', 606), botInfo);
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    release();
+    await handling;
   });
 });

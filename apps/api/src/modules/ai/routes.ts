@@ -2,6 +2,7 @@ import { AI_MODES, type Language } from '@yuristim/types';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../../lib/errors.js';
+import { logPerformance } from '../../lib/performance.js';
 import { authenticateRequest, parseInput } from '../auth/http.js';
 import type { CoreAuthService } from '../auth/service.js';
 import type { AiService, AiTelemetry } from './service.js';
@@ -160,6 +161,10 @@ export function registerAiRoutes(
       idempotencyKey: idempotencyKey(request.headers['idempotency-key']),
       language: language(user.language),
       mode: body.mode,
+      performance: (metric) => {
+        const { durationMilliseconds, event, ...details } = metric;
+        logPerformance(request, event, durationMilliseconds, details);
+      },
       requestId: request.id,
       telemetry: telemetry(request.log),
       userId: user.id,
@@ -202,6 +207,10 @@ export function registerAiRoutes(
         language: language(user.language),
         mode: body.mode,
         onDelta: (delta) => writeSse(reply, 'delta', { delta }),
+        performance: (metric) => {
+          const { durationMilliseconds, event, ...details } = metric;
+          logPerformance(request, event, durationMilliseconds, details);
+        },
         requestId: request.id,
         signal: controller.signal,
         telemetry: telemetry(request.log),

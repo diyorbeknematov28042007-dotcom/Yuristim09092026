@@ -28,6 +28,7 @@ import type {
   AiMessageView,
   AiSendResult,
   AiStatusView,
+  BotAiRuntimeView,
   Language,
 } from '@yuristim/types';
 import { AppError } from '../../lib/errors.js';
@@ -56,6 +57,20 @@ export interface AiTelemetry {
   errorCategory?: string;
 }
 
+export interface AiPerformanceMetric {
+  event:
+    | 'database/context_reads'
+    | 'ai_gateway_start'
+    | 'provider_first_response'
+    | 'provider_complete'
+    | 'credit_finalize'
+    | 'ai_finalize';
+  durationMilliseconds: number;
+  attemptNumber?: number;
+  status?: 'succeeded' | 'failed' | 'interrupted';
+  success?: boolean;
+}
+
 export interface AiSendInput {
   userId: string;
   conversationId: string;
@@ -66,6 +81,7 @@ export interface AiSendInput {
   signal?: AbortSignal | undefined;
   onDelta?: ((delta: string) => void | Promise<void>) | undefined;
   requestId: string;
+  performance?: ((event: AiPerformanceMetric) => void) | undefined;
   telemetry?: ((event: AiTelemetry) => void) | undefined;
 }
 
@@ -286,12 +302,30 @@ export class AiService {
   }
 
   async botStatus(userId: string): Promise<AiBotStatusView> {
-    const [status, state] = await Promise.all([
-      this.status(userId),
-      this.repository.getUserState(userId),
+    const [runtime, availability, balance] = await Promise.all([
+      this.botRoutingState(userId),
+      this.gateway.availability(),
+      this.credits.getBalance(userId),
     ]);
     return {
-      ...status,
+      ...runtime,
+      availability,
+      balance,
+    };
+  }
+
+  async botRoutingState(userId: string): Promise<BotAiRuntimeView> {
+    const state = await this.repository.getUserState(userId);
+    const activeConversation = state?.active_conversation_id
+      ? await this.repository.findConversationById(userId, state.active_conversation_id)
+      : null;
+    return {
+      activeConversationId: activeConversation?.public_id ?? null,
+      botChatActive: state?.bot_chat_active ?? false,
+      mode:
+        (activeConversation?.mode as AiMode | undefined) ??
+        (state?.preferred_mode as AiMode | undefined) ??
+        'fast',
       telegramControlMessageId: state?.telegram_control_message_id ?? null,
     };
   }
@@ -310,19 +344,17 @@ export class AiService {
   }
 
   async status(userId: string): Promise<AiStatusView> {
-    const state = await this.repository.getUserState(userId);
-    const activeConversation = state?.active_conversation_id
-      ? await this.repository.findConversationById(userId, state.active_conversation_id)
-      : null;
+    const [runtime, availability, balance] = await Promise.all([
+      this.botRoutingState(userId),
+      this.gateway.availability(),
+      this.credits.getBalance(userId),
+    ]);
     return {
-      activeConversationId: activeConversation?.public_id ?? null,
-      availability: await this.gateway.availability(),
-      balance: await this.credits.getBalance(userId),
-      botChatActive: state?.bot_chat_active ?? false,
-      mode:
-        (activeConversation?.mode as AiMode | undefined) ??
-        (state?.preferred_mode as AiMode | undefined) ??
-        'fast',
+      activeConversationId: runtime.activeConversationId,
+      availability,
+      balance,
+      botChatActive: runtime.botChatActive,
+      mode: runtime.mode,
     };
   }
 
@@ -360,14 +392,21 @@ export class AiService {
     const mode = input.mode ?? (conversation.mode as AiMode);
     const config = this.gateway.config(mode);
     const systemPrompt = buildYuristimSystemPrompt(input.language);
-    const existingMessages = await this.repository.listMessages(conversation.id);
+    const contextReadsStartedAt = Date.now();
+    const [existingMessages, balance] = await Promise.all([
+      this.repository.listMessages(conversation.id),
+      this.credits.getBalance(input.userId),
+    ]);
+    input.performance?.({
+      durationMilliseconds: Date.now() - contextReadsStartedAt,
+      event: 'database/context_reads',
+    });
     const history = this.contextHistory(existingMessages);
     const contextWithPrompt = buildConversationContext(
       [...history, { content: input.content, createdAt: this.now().toISOString(), role: 'user' }],
       Math.max(1_024, config.contextLimit - config.maxOutputTokens - estimateTokens(systemPrompt)),
     );
     const estimate = estimateCreditCharge(config, contextWithPrompt.messages, systemPrompt);
-    const balance = await this.credits.getBalance(input.userId);
     if (balance.total < estimate.credits) {
       throw new AppError(402, 'INSUFFICIENT_CREDITS', 'Insufficient credits');
     }
@@ -411,19 +450,45 @@ export class AiService {
           config.contextLimit - config.maxOutputTokens - estimateTokens(systemPrompt),
         ),
       );
+      input.performance?.({
+        durationMilliseconds: Date.now() - startedAt,
+        event: 'ai_gateway_start',
+      });
+      const gatewayStartedAt = Date.now();
+      let firstResponseRecorded = false;
       const generated = await this.gateway.execute({
         messages: context.messages,
         mode,
         onAttempt: async (event) => {
+          input.performance?.({
+            attemptNumber: event.attemptNumber,
+            durationMilliseconds: event.latencyMilliseconds,
+            event: 'provider_complete',
+            status: event.status,
+          });
           await this.repository.recordProviderAttempt({
             ...event,
             messageId: assistantMessage!.id,
           });
         },
-        ...(input.onDelta ? { onDelta: input.onDelta } : {}),
+        ...(input.onDelta
+          ? {
+              onDelta: async (delta: string) => {
+                if (!firstResponseRecorded && delta) {
+                  firstResponseRecorded = true;
+                  input.performance?.({
+                    durationMilliseconds: Date.now() - gatewayStartedAt,
+                    event: 'provider_first_response',
+                  });
+                }
+                await input.onDelta?.(delta);
+              },
+            }
+          : {}),
         ...(input.signal ? { signal: input.signal } : {}),
         systemPrompt,
       });
+      const providerCompletedAt = Date.now();
       await this.repository.routeMessage({
         messageId: assistantMessage.id,
         model: generated.config.model,
@@ -433,6 +498,7 @@ export class AiService {
       });
       const providerCostUsd = calculateProviderCostUsd(generated.config, generated.usage);
       const chargedCredits = calculateCreditCharge(generated.config, generated.usage);
+      const creditFinalizeStartedAt = Date.now();
       const completed = await this.repository.completeMessage({
         chargedCredits,
         content: generated.content,
@@ -442,6 +508,11 @@ export class AiService {
         outputTokens: generated.usage.outputTokens,
         providerCostUsd,
         userId: input.userId,
+      });
+      input.performance?.({
+        durationMilliseconds: Date.now() - creditFinalizeStartedAt,
+        event: 'credit_finalize',
+        success: true,
       });
       input.telemetry?.({
         chargedCredits,
@@ -455,12 +526,18 @@ export class AiService {
         success: true,
       });
       const updatedConversation = await this.ownedConversation(input.userId, input.conversationId);
+      input.performance?.({
+        durationMilliseconds: Date.now() - providerCompletedAt,
+        event: 'ai_finalize',
+        success: true,
+      });
       return {
         conversation: conversationView(updatedConversation, input.language),
         duplicate: false,
         message: messageView(completed, []),
       };
     } catch (error) {
+      const finalizeStartedAt = Date.now();
       const category = error instanceof AiProviderError ? error.category : 'unknown';
       if (
         assistantMessage &&
@@ -488,6 +565,11 @@ export class AiService {
         model: config.model,
         provider: config.provider,
         requestId: input.requestId,
+        success: false,
+      });
+      input.performance?.({
+        durationMilliseconds: Date.now() - finalizeStartedAt,
+        event: 'ai_finalize',
         success: false,
       });
       if (error instanceof AppError) throw error;

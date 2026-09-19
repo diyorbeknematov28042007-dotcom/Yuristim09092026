@@ -1,6 +1,7 @@
 import { EnvironmentValidationError, SERVICE_NAMES } from '@yuristim/config';
 import { createBot } from './bot.js';
 import { loadBotEnv } from './config/env.js';
+import { startBotRunner, stopBotRunner } from './runner.js';
 
 async function start(): Promise<void> {
   try {
@@ -30,11 +31,19 @@ async function start(): Promise<void> {
       token: env.TELEGRAM_BOT_TOKEN,
     });
 
-    await bot.start({
-      onStart: () => {
-        console.info(`${SERVICE_NAMES.bot} started`);
-      },
-    });
+    await bot.init();
+    const runner = startBotRunner(bot);
+    let stopping = false;
+    const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+      if (stopping) return;
+      stopping = true;
+      console.info(`${SERVICE_NAMES.bot} stopping`, { signal });
+      await stopBotRunner(runner);
+    };
+    process.once('SIGINT', () => void shutdown('SIGINT'));
+    process.once('SIGTERM', () => void shutdown('SIGTERM'));
+    console.info(`${SERVICE_NAMES.bot} started`);
+    await runner.task();
   } catch (error) {
     const message =
       error instanceof EnvironmentValidationError

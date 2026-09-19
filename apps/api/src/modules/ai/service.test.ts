@@ -380,17 +380,32 @@ describe('AiService conversation and charging lifecycle', () => {
   it('persists a successful answer, usage charge, and deterministic title', async () => {
     const { repository, service } = fixture();
     const conversation = await service.createConversation(userA, 'uz');
+    const performance = vi.fn();
     const result = await service.send({
       content: 'Mehnat shartnomasi haqida tushuntiring',
       conversationId: conversation.id,
       idempotencyKey: 'request-success-1',
       language: 'uz',
+      performance,
       requestId: 'req-1',
       userId: userA,
     });
     expect(result.message).toMatchObject({ chargedCredits: 2.1, status: 'completed' });
     expect(result.conversation.title).toBe('Mehnat shartnomasi haqida tushuntiring');
     expect(repository.messages).toHaveLength(2);
+    expect(performance.mock.calls.map(([metric]) => metric.event)).toEqual([
+      'database/context_reads',
+      'ai_gateway_start',
+      'provider_complete',
+      'credit_finalize',
+      'ai_finalize',
+    ]);
+    expect(
+      performance.mock.calls.every(
+        ([metric]) =>
+          typeof metric.durationMilliseconds === 'number' && metric.durationMilliseconds >= 0,
+      ),
+    ).toBe(true);
   });
 
   it('returns a completed duplicate without a second provider call or charge', async () => {
@@ -615,6 +630,7 @@ describe('AiService conversation and charging lifecycle', () => {
     } as unknown as CreditService;
     const service = new AiService(repository, gateway, credits, () => now);
     const conversation = await service.createConversation(userA, 'uz');
+    const performance = vi.fn();
     await expect(
       service.send({
         content: 'Streaming savol',
@@ -622,11 +638,15 @@ describe('AiService conversation and charging lifecycle', () => {
         idempotencyKey: 'request-stream-fail',
         language: 'uz',
         onDelta: vi.fn(),
+        performance,
         requestId: 'req-stream',
         userId: userA,
       }),
     ).rejects.toMatchObject({ code: 'AI_PROVIDER_UNAVAILABLE' });
     expect(stream).toHaveBeenCalledOnce();
+    expect(performance.mock.calls.map(([metric]) => metric.event)).toContain(
+      'provider_first_response',
+    );
     expect(repository.messages.find((row) => row.role === 'assistant')).toMatchObject({
       charged_credits: 0,
       status: 'failed',

@@ -9,6 +9,7 @@ import {
 } from '@yuristim/db';
 import type {
   BotLawyerContext,
+  BotRuntimeContext,
   BotVerificationAction,
   Language,
   LawyerProfileView,
@@ -141,6 +142,18 @@ export class LawyerService {
             .findLatestVerification(profile.profile.id)
             .then((row) => (row ? this.toVerificationView(row) : null))
         : null,
+    };
+  }
+
+  async getBotRoutingState(user: UserRow): Promise<BotRuntimeContext['lawyer']> {
+    const profile = await this.repository.findRoutingProfileByUserId(user.id);
+    if (!profile) return { draftStep: null, verificationStatus: null };
+
+    const verification = await this.repository.findLatestVerification(profile.id);
+    return {
+      draftStep: verification?.status === 'draft' ? (draftFrom(verification).step ?? null) : null,
+      verificationStatus: (verification?.status ??
+        profile.verificationStatus) as BotRuntimeContext['lawyer']['verificationStatus'],
     };
   }
 

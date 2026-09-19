@@ -40,7 +40,6 @@ import {
   showMarketplaceUserHome,
 } from '../services/marketplace.service.js';
 import {
-  isCurrentAiController,
   leaveAiChat,
   showAiConversation,
   showAiHistory,
@@ -48,18 +47,41 @@ import {
   startNewAiConversation,
   switchAiMode,
 } from '../services/ai.service.js';
+import { elapsedBotMilliseconds, recordBotPerformance } from '../observability/performance.js';
 
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('callback_query:data', async (context) => {
     const callback = parseCallbackData(context.callbackQuery.data);
     if (!callback || !context.from) {
-      await context.answerCallbackQuery({
-        show_alert: true,
-        text: t(telegramLanguage(context.from?.language_code), 'invalidAction'),
-      });
+      let acknowledged = false;
+      try {
+        await context.answerCallbackQuery({
+          show_alert: true,
+          text: t(telegramLanguage(context.from?.language_code), 'invalidAction'),
+        });
+        acknowledged = true;
+      } finally {
+        recordBotPerformance('callback_ack', {
+          durationMilliseconds: elapsedBotMilliseconds(),
+          success: acknowledged,
+        });
+      }
       return;
     }
+    let acknowledged = false;
+    try {
+      await context.answerCallbackQuery();
+      acknowledged = true;
+    } finally {
+      recordBotPerformance('callback_ack', {
+        durationMilliseconds: elapsedBotMilliseconds(),
+        success: acknowledged,
+      });
+    }
     let data = await context.yuristimApi.getTelegramUserContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
     let language = data.user.language ?? telegramLanguage(context.from.language_code);
     const controllerCallbacks = new Set([
       'ai:back',
@@ -68,11 +90,14 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       'ai:mode:fast',
       'ai:mode:expert',
     ]);
-    if (controllerCallbacks.has(callback) && !(await isCurrentAiController(context))) {
-      await context.answerCallbackQuery({ text: t(language, 'aiControllerExpired') });
-      return;
+    if (controllerCallbacks.has(callback)) {
+      const callbackMessageId = context.callbackQuery.message?.message_id;
+      const status = await context.yuristimApi.getAiStatus(context.from.id);
+      if (!callbackMessageId || status.telegramControlMessageId !== callbackMessageId) {
+        await context.reply(t(language, 'aiControllerExpired'));
+        return;
+      }
     }
-    await context.answerCallbackQuery();
 
     if (callback.startsWith('lang:')) {
       language = callback.slice(5) as Language;

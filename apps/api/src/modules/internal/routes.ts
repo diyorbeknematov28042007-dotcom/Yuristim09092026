@@ -17,6 +17,7 @@ import type { LawyerService } from '../lawyers/service.js';
 import type { CreditService } from '../credits/service.js';
 import type { MarketplaceService } from '../marketplace/service.js';
 import type { AiService } from '../ai/service.js';
+import { logPerformance } from '../../lib/performance.js';
 
 const identitySchema = z
   .object({
@@ -135,6 +136,55 @@ export function registerInternalRoutes(
     );
     return service.getTelegramUserContext(params.telegramUserId);
   });
+
+  if (lawyerService && marketplaceService && aiService) {
+    app.get('/internal/telegram/users/:telegramUserId/runtime-context', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const reads: Record<string, number> = {};
+      const startedAt = performance.now();
+      const timed = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+        const readStartedAt = performance.now();
+        try {
+          return await operation();
+        } finally {
+          reads[name] = performance.now() - readStartedAt;
+        }
+      };
+
+      const user = await timed('user', () =>
+        service.getTelegramUserForInternal(params.telegramUserId),
+      );
+      const parallelStartedAt = performance.now();
+      const [lawyer, marketplaceDraft, ai] = await Promise.all([
+        timed('lawyer', () => lawyerService.getBotRoutingState(user)),
+        timed('marketplace', () => marketplaceService.getDraft(user.id)),
+        timed('ai', () => aiService.botRoutingState(user.id)),
+      ]);
+      const userView = service.toUserView(user);
+      logPerformance(request, 'database/context_reads', performance.now() - startedAt, {
+        aiReadMilliseconds: reads.ai,
+        lawyerReadMilliseconds: reads.lawyer,
+        marketplaceReadMilliseconds: reads.marketplace,
+        parallelReadMilliseconds: performance.now() - parallelStartedAt,
+        userReadMilliseconds: reads.user,
+      });
+      return {
+        ai,
+        lawyer,
+        marketplace: { draftStep: marketplaceDraft?.step ?? null },
+        user: {
+          activeMode: userView.activeMode,
+          language: userView.language,
+          onboardingRole: userView.onboardingRole,
+          onboardingStatus: userView.onboardingStatus,
+        },
+      };
+    });
+  }
 
   app.patch('/internal/telegram/users/:telegramUserId/onboarding', async (request) => {
     verifyInternalRequest(request, request.body, internalBotSecret);
@@ -418,6 +468,10 @@ export function registerInternalRoutes(
           conversationId: params.conversationId,
           idempotencyKey: body.idempotencyKey,
           language: userLanguage(user.language),
+          performance: (metric) => {
+            const { durationMilliseconds, event, ...details } = metric;
+            logPerformance(request, event, durationMilliseconds, details);
+          },
           requestId: request.id,
           telemetry: (event) => request.log.info(event, 'AI request completed'),
           userId: user.id,

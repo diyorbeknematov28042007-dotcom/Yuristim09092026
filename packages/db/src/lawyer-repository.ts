@@ -14,6 +14,11 @@ export interface LawyerProfileRecord {
   specializations: SpecializationRow[];
 }
 
+export interface LawyerRoutingProfile {
+  id: string;
+  verificationStatus: LawyerProfileRow['verification_status'];
+}
+
 export interface LawyerSearchInput {
   region?: string | undefined;
   specialization?: string | undefined;
@@ -51,6 +56,7 @@ export interface FileUploadInput {
 
 export interface LawyerRepository {
   findProfileByUserId(userId: string): Promise<LawyerProfileRecord | null>;
+  findRoutingProfileByUserId(userId: string): Promise<LawyerRoutingProfile | null>;
   findApprovedProfileByDuid(duid: string): Promise<LawyerProfileRecord | null>;
   createProfile(userId: string, publicSlug: string): Promise<LawyerProfileRecord>;
   listSpecializations(): Promise<SpecializationRow[]>;

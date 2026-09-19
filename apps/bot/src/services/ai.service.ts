@@ -1,4 +1,4 @@
-import type { AiMode, Language } from '@yuristim/types';
+import type { AiMode, BotAiRuntimeView, Language } from '@yuristim/types';
 import type { YuristimBotContext } from '../bot.js';
 import { YuristimApiError } from '../api/yuristim-api.client.js';
 import { t } from '../i18n/index.js';
@@ -216,10 +216,12 @@ export async function sendAiPrompt(
   conversationId: string,
   content: string,
   idempotencyKey: string,
+  runtime: BotAiRuntimeView,
 ): Promise<void> {
-  const status = await context.yuristimApi.getAiStatus(context.from!.id);
-  await detachController(context, status.telegramControlMessageId);
-  let stickerMessageId = await sendStatusSticker(context, status.mode);
+  const controllerCleanup = detachController(context, runtime.telegramControlMessageId);
+  const stickerCleanup = sendStatusSticker(context, runtime.mode).then((messageId) =>
+    deleteStatusSticker(context, messageId),
+  );
   try {
     try {
       const result = await context.yuristimApi.sendAiMessage(
@@ -228,7 +230,7 @@ export async function sendAiPrompt(
         content,
         idempotencyKey,
       );
-      if (await deleteStatusSticker(context, stickerMessageId)) stickerMessageId = null;
+      await stickerCleanup;
       const answer = `${t(language, 'aiReady')}\n\n${telegramPlainText(result.message.content)}\n\n💳 ${t(
         language,
         'aiCreditsCharged',
@@ -243,11 +245,11 @@ export async function sendAiPrompt(
         await context.reply(t(language, 'apiError')).catch(() => undefined);
       }
     } catch (error) {
-      if (await deleteStatusSticker(context, stickerMessageId)) stickerMessageId = null;
+      await stickerCleanup;
       await context.reply(aiErrorText(language, error));
     }
   } finally {
-    await deleteStatusSticker(context, stickerMessageId);
+    await Promise.allSettled([controllerCleanup, stickerCleanup]);
     await publishController(context, language);
   }
 }
@@ -258,18 +260,12 @@ export async function leaveAiChat(context: YuristimBotContext): Promise<void> {
   await context.yuristimApi.leaveAi(context.from!.id);
 }
 
-export async function isCurrentAiController(context: YuristimBotContext): Promise<boolean> {
-  const callbackMessageId = context.callbackQuery?.message?.message_id;
-  if (!callbackMessageId) return false;
-  const status = await context.yuristimApi.getAiStatus(context.from!.id);
-  return status.telegramControlMessageId === callbackMessageId;
-}
-
 export async function showAiFileRedirect(
   context: YuristimBotContext,
   language: Language,
+  runtime?: BotAiRuntimeView,
 ): Promise<void> {
-  const status = await context.yuristimApi.getAiStatus(context.from!.id);
+  const status = runtime ?? (await context.yuristimApi.getAiStatus(context.from!.id));
   await detachController(context, status.telegramControlMessageId);
   await context.reply(t(language, 'aiFileWebOnly'), {
     reply_markup: aiFileRedirectKeyboard(language, context.botConfig.miniAppUrl),

@@ -7,6 +7,13 @@ import { registerMessageHandler } from './handlers/message.handler.js';
 import { registerStartHandler } from './handlers/start.handler.js';
 import { apiContext } from './middleware/api-context.js';
 import { safeErrorHandler } from './middleware/error-handler.js';
+import {
+  currentBotCorrelationId,
+  elapsedBotMilliseconds,
+  recordBotPerformance,
+  withBotPerformance,
+} from './observability/performance.js';
+import { orderedUpdates } from './runner.js';
 
 export interface YuristimBotContext extends Context {
   botConfig: BotRuntimeConfig;
@@ -60,6 +67,7 @@ export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
       ...(options.aiApiTimeoutMilliseconds
         ? { aiTimeoutMilliseconds: options.aiApiTimeoutMilliseconds }
         : {}),
+      correlationId: currentBotCorrelationId,
     });
   const config: BotRuntimeConfig = {
     ...(options.aiFastStickerFileId ? { aiFastStickerFileId: options.aiFastStickerFileId } : {}),
@@ -79,6 +87,41 @@ export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
     marketplaceChannelUrl: options.marketplaceChannelUrl,
   };
 
+  bot.api.config.use(async (previous, method, payload, signal) => {
+    if (!currentBotCorrelationId()) return previous(method, payload, signal);
+    const startedAt = Date.now();
+    recordBotPerformance('telegram_response_start', { method });
+    try {
+      const result = await previous(method, payload, signal);
+      recordBotPerformance('telegram_response_complete', {
+        durationMilliseconds: Date.now() - startedAt,
+        method,
+        success: true,
+      });
+      return result;
+    } catch (error) {
+      recordBotPerformance('telegram_response_complete', {
+        durationMilliseconds: Date.now() - startedAt,
+        method,
+        success: false,
+      });
+      throw error;
+    }
+  });
+
+  bot.use(async (_context, next) => {
+    await withBotPerformance(async () => {
+      recordBotPerformance('telegram_update_received', { durationMilliseconds: 0 });
+      try {
+        await next();
+      } finally {
+        recordBotPerformance('total_duration', {
+          durationMilliseconds: elapsedBotMilliseconds(),
+        });
+      }
+    });
+  });
+  bot.use(orderedUpdates());
   bot.use(safeErrorHandler());
   bot.use(apiContext(api));
   bot.use(async (context, next) => {

@@ -5,6 +5,7 @@ import type {
   AdminSessionRow,
   FileUploadInput,
   LawyerProfileRecord,
+  LawyerRoutingProfile,
   LawyerRepository,
   LawyerSearchInput,
   LawyerSearchResult,
@@ -48,6 +49,16 @@ export class SupabaseLawyerRepository implements LawyerRepository {
       .maybeSingle();
     if (error) databaseFailure(error);
     return data ? profileRecord(data as unknown as RawProfile) : null;
+  }
+
+  async findRoutingProfileByUserId(userId: string): Promise<LawyerRoutingProfile | null> {
+    const { data, error } = await this.client
+      .from('lawyer_profiles')
+      .select('id,verification_status')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) databaseFailure(error);
+    return data ? { id: data.id, verificationStatus: data.verification_status } : null;
   }
 
   async findApprovedProfileByDuid(duid: string): Promise<LawyerProfileRecord | null> {

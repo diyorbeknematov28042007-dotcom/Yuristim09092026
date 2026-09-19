@@ -45,6 +45,17 @@ const postSelect = `
   marketplace_acceptances!marketplace_acceptances_marketplace_post_id_fkey(count)
 `;
 
+const draftSelect = `
+  user_id,
+  description,
+  region,
+  additional_details,
+  draft_step,
+  language,
+  updated_at,
+  specializations!marketplace_posts_specialization_id_fkey(code)
+`;
+
 function one(value: any): any {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -112,7 +123,7 @@ export class SupabaseMarketplaceRepository implements MarketplaceRepository {
   async getDraft(userId: string): Promise<MarketplaceDraftRow | null> {
     const { data, error } = await this.client
       .from('marketplace_posts')
-      .select(postSelect)
+      .select(draftSelect)
       .eq('user_id', userId)
       .eq('status', 'draft')
       .maybeSingle();
@@ -157,7 +168,7 @@ export class SupabaseMarketplaceRepository implements MarketplaceRepository {
       })
       .eq('user_id', input.user_id)
       .eq('status', 'draft')
-      .select(postSelect)
+      .select(draftSelect)
       .single();
     return draftRow(requireData(data, error));
   }

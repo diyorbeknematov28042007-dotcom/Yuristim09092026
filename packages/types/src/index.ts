@@ -442,3 +442,29 @@ export interface AiStatusView {
   availability: Record<AiMode, boolean>;
   balance: CreditBalanceView;
 }
+
+export interface BotRuntimeUserView {
+  activeMode: UserMode;
+  language: Language | null;
+  onboardingRole: UserRole | null;
+  onboardingStatus: OnboardingStatus;
+}
+
+export interface BotAiRuntimeView {
+  activeConversationId: string | null;
+  botChatActive: boolean;
+  mode: AiMode;
+  telegramControlMessageId: number | null;
+}
+
+export interface BotRuntimeContext {
+  user: BotRuntimeUserView;
+  lawyer: {
+    draftStep: NonNullable<LawyerVerificationDraft['step']> | null;
+    verificationStatus: LawyerVerificationStatus | null;
+  };
+  marketplace: {
+    draftStep: MarketplaceDraftView['step'] | null;
+  };
+  ai: BotAiRuntimeView;
+}

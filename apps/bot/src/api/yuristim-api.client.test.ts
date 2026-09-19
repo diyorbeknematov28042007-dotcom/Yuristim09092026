@@ -60,6 +60,36 @@ describe('YuristimApiClient', () => {
     expect(headers.get('x-yuristim-signature')).not.toContain(secret);
   });
 
+  it('parses the minimal runtime context and forwards the update correlation ID', async () => {
+    const payload = {
+      ai: {
+        activeConversationId: 'aic_000000000000000000000001',
+        botChatActive: true,
+        mode: 'fast',
+        telegramControlMessageId: 42,
+      },
+      lawyer: { draftStep: null, verificationStatus: 'approved' },
+      marketplace: { draftStep: null },
+      user: {
+        activeMode: 'user',
+        language: 'uz',
+        onboardingRole: 'user',
+        onboardingStatus: 'completed',
+      },
+    };
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(Response.json(payload)));
+    const client = new YuristimApiClient({
+      baseUrl: 'http://localhost:3001',
+      correlationId: () => 'tg-correlation-1',
+      fetch: fetchMock,
+      internalApiSecret: secret,
+    });
+
+    await expect(client.getRuntimeContext(identity.telegramUserId)).resolves.toEqual(payload);
+    const [, request] = fetchMock.mock.calls[0]!;
+    expect(new Headers(request?.headers).get('x-correlation-id')).toBe('tg-correlation-1');
+  });
+
   it('maps structured API errors without leaking server details', async () => {
     const client = new YuristimApiClient({
       baseUrl: 'http://localhost:3001',

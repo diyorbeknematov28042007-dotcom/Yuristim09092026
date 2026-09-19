@@ -15,21 +15,25 @@ import {
   showMarketplaceUserHome,
 } from '../services/marketplace.service.js';
 import { sendAiPrompt, showAiFileRedirect, showAiHome } from '../services/ai.service.js';
+import { elapsedBotMilliseconds, recordBotPerformance } from '../observability/performance.js';
 
 export function registerMessageHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('message:text', async (context) => {
     if (!context.from) return;
-    let data = await context.yuristimApi.getTelegramUserContext(context.from.id);
-    const language = data.user.language ?? 'uz';
+    const runtime = await context.yuristimApi.getRuntimeContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
+    const language = runtime.user.language ?? 'uz';
     const message = context.message.text;
 
-    if (data.user.onboardingStatus === 'name_required') {
+    if (runtime.user.onboardingStatus === 'name_required') {
       const fullName = validFullName(message);
       if (!fullName) {
         await context.reply(t(language, 'nameInvalid'));
         return;
       }
-      data = await context.yuristimApi.updateOnboarding(context.from.id, {
+      const data = await context.yuristimApi.updateOnboarding(context.from.id, {
         action: 'set_full_name',
         fullName,
       });
@@ -39,14 +43,13 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       await showOnboardingStep(context, data, context.botConfig);
       return;
     }
-    if (data.user.onboardingStatus !== 'completed') {
-      await showOnboardingStep(context, data, context.botConfig);
+    if (runtime.user.onboardingStatus !== 'completed') {
+      await showOnboardingStep(context, runtime, context.botConfig);
       return;
     }
 
-    const lawyer = await context.yuristimApi.getLawyerContext(context.from.id);
-    if (lawyer.verification?.status === 'draft') {
-      const step = lawyer.verification.draft.step ?? 'full_name';
+    if (runtime.lawyer.verificationStatus === 'draft') {
+      const step = runtime.lawyer.draftStep ?? 'full_name';
       let action:
         | { action: 'set_full_name'; fullName: string }
         | { action: 'set_region'; region: string }
@@ -93,6 +96,7 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
         }
         action = { action: 'set_price', consultationPrice };
       } else {
+        const lawyer = await context.yuristimApi.getLawyerContext(context.from.id);
         await showVerificationStep(context, language, lawyer.verification);
         return;
       }
@@ -101,12 +105,9 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
 
-    const marketplaceDraft =
-      typeof context.yuristimApi.getMarketplaceDraft === 'function'
-        ? await context.yuristimApi.getMarketplaceDraft(context.from.id)
-        : null;
-    if (marketplaceDraft) {
-      if (marketplaceDraft.step === 'description') {
+    const marketplaceDraftStep = runtime.marketplace.draftStep;
+    if (marketplaceDraftStep) {
+      if (marketplaceDraftStep === 'description') {
         if (message.trim().length < 20 || message.trim().length > 1500) {
           await context.reply(t(language, 'verificationInvalidInput'));
           return;
@@ -121,7 +122,7 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
         );
         return;
       }
-      if (marketplaceDraft.step === 'region') {
+      if (marketplaceDraftStep === 'region') {
         if (message.trim().length < 2 || message.trim().length > 120) {
           await context.reply(t(language, 'verificationInvalidInput'));
           return;
@@ -136,7 +137,7 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
         );
         return;
       }
-      if (marketplaceDraft.step === 'additional_details') {
+      if (marketplaceDraftStep === 'additional_details') {
         if (message.trim().length < 2 || message.trim().length > 1500) {
           await context.reply(t(language, 'verificationInvalidInput'));
           return;
@@ -151,7 +152,11 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
         );
         return;
       }
-      await showMarketplaceDraft(context, language, marketplaceDraft);
+      await showMarketplaceDraft(
+        context,
+        language,
+        await context.yuristimApi.getMarketplaceDraft(context.from.id),
+      );
       return;
     }
 
@@ -166,12 +171,12 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       });
       return;
     }
-    if (message === t(language, 'findLawyer') && data.user.activeMode === 'user') {
+    if (message === t(language, 'findLawyer') && runtime.user.activeMode === 'user') {
       await context.yuristimApi.leaveAi(context.from.id);
       await showMarketplaceUserHome(context, language);
       return;
     }
-    if (message === t(language, 'findClients') && data.user.activeMode === 'lawyer') {
+    if (message === t(language, 'findClients') && runtime.user.activeMode === 'lawyer') {
       await context.yuristimApi.leaveAi(context.from.id);
       await showLawyerDiscovery(context, language);
       return;
@@ -201,31 +206,32 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
       return;
     }
 
-    const aiStatus = await context.yuristimApi.getAiStatus(context.from.id);
-    if (aiStatus.botChatActive && aiStatus.activeConversationId) {
+    if (runtime.ai.botChatActive && runtime.ai.activeConversationId) {
       await sendAiPrompt(
         context,
         language,
-        aiStatus.activeConversationId,
+        runtime.ai.activeConversationId,
         message,
         `telegram:${context.chat.id}:${context.message.message_id}`,
+        runtime.ai,
       );
       return;
     }
 
     await context.reply(t(language, 'unknownMessage'));
-    await showMainMenu(context, data);
+    await showMainMenu(context, runtime);
   });
 
   composer.on('message:photo', async (context) => {
     if (!context.from) return;
-    const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
-    const language = data.user.language ?? 'uz';
-    const lawyer = await context.yuristimApi.getLawyerContext(context.from.id);
-    const step = lawyer.verification?.status === 'draft' ? lawyer.verification.draft.step : null;
+    const runtime = await context.yuristimApi.getRuntimeContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
+    const language = runtime.user.language ?? 'uz';
+    const step = runtime.lawyer.verificationStatus === 'draft' ? runtime.lawyer.draftStep : null;
     if (step !== 'profile_image' && step !== 'verification_document') {
-      const aiStatus = await context.yuristimApi.getAiStatus(context.from.id);
-      if (aiStatus.botChatActive) await showAiFileRedirect(context, language);
+      if (runtime.ai.botChatActive) await showAiFileRedirect(context, language, runtime.ai);
       return;
     }
     const photo = context.message.photo.at(-1);
@@ -251,13 +257,14 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
 
   composer.on('message:document', async (context) => {
     if (!context.from) return;
-    const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
-    const language = data.user.language ?? 'uz';
-    const lawyer = await context.yuristimApi.getLawyerContext(context.from.id);
-    const step = lawyer.verification?.status === 'draft' ? lawyer.verification.draft.step : null;
+    const runtime = await context.yuristimApi.getRuntimeContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
+    const language = runtime.user.language ?? 'uz';
+    const step = runtime.lawyer.verificationStatus === 'draft' ? runtime.lawyer.draftStep : null;
     if (step !== 'profile_image' && step !== 'verification_document') {
-      const aiStatus = await context.yuristimApi.getAiStatus(context.from.id);
-      if (aiStatus.botChatActive) await showAiFileRedirect(context, language);
+      if (runtime.ai.botChatActive) await showAiFileRedirect(context, language, runtime.ai);
       return;
     }
     const document = context.message.document;
@@ -289,15 +296,21 @@ export function registerMessageHandler(composer: Composer<YuristimBotContext>): 
 
   composer.on('message:voice', async (context) => {
     if (!context.from) return;
-    const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
-    const status = await context.yuristimApi.getAiStatus(context.from.id);
-    if (status.botChatActive) await showAiFileRedirect(context, data.user.language ?? 'uz');
+    const runtime = await context.yuristimApi.getRuntimeContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
+    if (runtime.ai.botChatActive)
+      await showAiFileRedirect(context, runtime.user.language ?? 'uz', runtime.ai);
   });
 
   composer.on('message:audio', async (context) => {
     if (!context.from) return;
-    const data = await context.yuristimApi.getTelegramUserContext(context.from.id);
-    const status = await context.yuristimApi.getAiStatus(context.from.id);
-    if (status.botChatActive) await showAiFileRedirect(context, data.user.language ?? 'uz');
+    const runtime = await context.yuristimApi.getRuntimeContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
+    if (runtime.ai.botChatActive)
+      await showAiFileRedirect(context, runtime.user.language ?? 'uz', runtime.ai);
   });
 }

@@ -10,6 +10,7 @@ import {
   type AiStatusView,
   type BotLawyerContext,
   type BotOnboardingAction,
+  type BotRuntimeContext,
   type BotUserContext,
   type BotVerificationAction,
   type CreditBalanceView,
@@ -24,6 +25,7 @@ import {
   type UserView,
 } from '@yuristim/types';
 import { z } from 'zod';
+import { recordBotPerformance } from '../observability/performance.js';
 
 export interface TelegramIdentity {
   telegramFirstName: string | null;
@@ -42,6 +44,7 @@ export interface BotAiStatusView extends AiStatusView {
 
 export interface YuristimApi {
   ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult>;
+  getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext>;
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext>;
   updateOnboarding(telegramUserId: number, action: BotOnboardingAction): Promise<BotUserContext>;
   getLawyerContext(telegramUserId: number): Promise<BotLawyerContext>;
@@ -173,6 +176,54 @@ const userSchema = z.object({
 });
 const ensureSchema = z.object({ created: z.boolean(), user: userSchema });
 const contextSchema = z.object({ hasPin: z.boolean(), user: userSchema });
+const runtimeContextSchema = z.object({
+  ai: z.object({
+    activeConversationId: z
+      .string()
+      .regex(/^aic_[a-f0-9]{24}$/)
+      .nullable(),
+    botChatActive: z.boolean(),
+    mode: z.enum(['fast', 'expert']),
+    telegramControlMessageId: z.number().int().positive().safe().nullable(),
+  }),
+  lawyer: z.object({
+    draftStep: z
+      .enum([
+        'full_name',
+        'region',
+        'specializations',
+        'experience',
+        'bio',
+        'price',
+        'profile_image',
+        'verification_document',
+        'summary',
+      ])
+      .nullable(),
+    verificationStatus: z
+      .enum([
+        'unverified',
+        'draft',
+        'submitted',
+        'pending_review',
+        'approved',
+        'rejected',
+        'resubmitted',
+      ])
+      .nullable(),
+  }),
+  marketplace: z.object({
+    draftStep: z
+      .enum(['specialization', 'description', 'region', 'additional_details', 'preview'])
+      .nullable(),
+  }),
+  user: z.object({
+    activeMode: z.enum(USER_MODES),
+    language: z.enum(LANGUAGES).nullable(),
+    onboardingRole: z.enum(USER_ROLES).nullable(),
+    onboardingStatus: z.enum(onboardingStatuses),
+  }),
+});
 const errorSchema = z.object({ error: z.object({ code: z.string() }) });
 const specializationSchema = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const verificationSchema = z.object({
@@ -392,6 +443,7 @@ interface ClientOptions {
   requestId?: () => string;
   timeoutMilliseconds?: number;
   aiTimeoutMilliseconds?: number;
+  correlationId?: () => string | undefined;
 }
 
 export function createInternalSignature(
@@ -426,6 +478,14 @@ export class YuristimApiClient implements YuristimApi {
   async ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult> {
     const payload = await this.request('POST', '/internal/telegram/users/ensure', identity);
     return this.parse(ensureSchema, payload);
+  }
+
+  async getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/runtime-context`,
+    );
+    return this.parse(runtimeContextSchema, payload);
   }
 
   async getTelegramUserContext(telegramUserId: number): Promise<BotUserContext> {
@@ -805,16 +865,21 @@ export class YuristimApiClient implements YuristimApi {
     body?: unknown,
     timeoutMilliseconds = this.timeoutMilliseconds,
   ) {
+    const startedAt = Date.now();
     const timestamp = String(Math.floor(this.now() / 1_000));
     const serializedBody = body === undefined ? undefined : JSON.stringify(body);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMilliseconds);
+    let statusCode: number | undefined;
+    let success = false;
 
     try {
+      const correlationId = this.options.correlationId?.();
       const response = await this.fetchImplementation(new URL(path, this.baseUrl), {
         ...(serializedBody === undefined ? {} : { body: serializedBody }),
         headers: {
           ...(serializedBody ? { 'content-type': 'application/json' } : {}),
+          ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
           'x-request-id': this.requestId(),
           'x-yuristim-signature': createInternalSignature(
             method,
@@ -828,6 +893,7 @@ export class YuristimApiClient implements YuristimApi {
         method,
         signal: controller.signal,
       });
+      statusCode = response.status;
       const payload: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const parsedError = errorSchema.safeParse(payload);
@@ -836,12 +902,29 @@ export class YuristimApiClient implements YuristimApi {
           : 'API_UNAVAILABLE';
         throw new YuristimApiError(code, response.status);
       }
+      success = true;
       return payload;
     } catch (error) {
       if (error instanceof YuristimApiError) throw error;
       throw new YuristimApiError('API_UNAVAILABLE', 503);
     } finally {
       clearTimeout(timer);
+      recordBotPerformance('bot_to_api', {
+        durationMilliseconds: Date.now() - startedAt,
+        method,
+        route: sanitizeRoute(path),
+        ...(statusCode === undefined ? {} : { statusCode }),
+        success,
+      });
     }
   }
+}
+
+function sanitizeRoute(path: string): string {
+  return path
+    .replace(/\/users\/[^/?]+/g, '/users/:telegramUserId')
+    .replace(/\/aic_[a-f0-9]{24}/g, '/:conversationId')
+    .replace(/\/aim_[a-f0-9]{24}/g, '/:messageId')
+    .replace(/\/mp_[a-f0-9]{24}/g, '/:listingId')
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/:id');
 }
