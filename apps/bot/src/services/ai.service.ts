@@ -219,9 +219,12 @@ export async function sendAiPrompt(
   runtime: BotAiRuntimeView,
 ): Promise<void> {
   const controllerCleanup = detachController(context, runtime.telegramControlMessageId);
-  const stickerCleanup = sendStatusSticker(context, runtime.mode).then((messageId) =>
-    deleteStatusSticker(context, messageId),
-  );
+  const statusSticker = sendStatusSticker(context, runtime.mode);
+  let stickerCleanup: Promise<boolean> | undefined;
+  const cleanupStatusSticker = (): Promise<boolean> => {
+    stickerCleanup ??= statusSticker.then((messageId) => deleteStatusSticker(context, messageId));
+    return stickerCleanup;
+  };
   try {
     try {
       const result = await context.yuristimApi.sendAiMessage(
@@ -230,7 +233,7 @@ export async function sendAiPrompt(
         content,
         idempotencyKey,
       );
-      await stickerCleanup;
+      await cleanupStatusSticker();
       const answer = `${t(language, 'aiReady')}\n\n${telegramPlainText(result.message.content)}\n\n💳 ${t(
         language,
         'aiCreditsCharged',
@@ -245,11 +248,11 @@ export async function sendAiPrompt(
         await context.reply(t(language, 'apiError')).catch(() => undefined);
       }
     } catch (error) {
-      await stickerCleanup;
+      await cleanupStatusSticker();
       await context.reply(aiErrorText(language, error));
     }
   } finally {
-    await Promise.allSettled([controllerCleanup, stickerCleanup]);
+    await Promise.allSettled([controllerCleanup, cleanupStatusSticker()]);
     await publishController(context, language);
   }
 }

@@ -1056,6 +1056,44 @@ describe('Yuristim AI Telegram UX', () => {
     expect(stickerDeleteIndex).toBeLessThan(answerIndex);
   });
 
+  it('keeps the status sticker until the AI request completes', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    let releaseProvider!: () => void;
+    let providerStarted!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    api.sendAiMessage = async (...args) => {
+      providerStarted();
+      await providerGate;
+      return originalSend(...args);
+    };
+    const { bot, calls } = fixture(api, { fastStickerFileId: 'fast-sticker' });
+    const handling = bot.handleUpdate(textUpdate('Savol', 214), botInfo);
+
+    await started;
+    await vi.waitFor(() => expect(calls.some((call) => call.method === 'sendSticker')).toBe(true));
+    const stickerIndex = calls.findIndex((call) => call.method === 'sendSticker');
+    expect(
+      calls.some(
+        (call) => call.method === 'deleteMessage' && call.payload.message_id === stickerIndex + 1,
+      ),
+    ).toBe(false);
+
+    releaseProvider();
+    await handling;
+    expect(
+      calls.some(
+        (call) => call.method === 'deleteMessage' && call.payload.message_id === stickerIndex + 1,
+      ),
+    ).toBe(true);
+  });
+
   it('switches mode, opens history, creates an isolated chat, and leaves through Back', async () => {
     const api = completedUser('en');
     api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 202 };
