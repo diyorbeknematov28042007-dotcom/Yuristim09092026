@@ -3,6 +3,7 @@ import {
   SupabaseAiRepository,
   SupabaseCoreRepository,
   SupabaseFinanceRepository,
+  SupabaseFounding100Repository,
   SupabaseLawyerRepository,
   SupabaseMarketplaceRepository,
 } from '@yuristim/db';
@@ -11,6 +12,7 @@ import { loadApiEnv } from './config/env.js';
 import { AdminService } from './modules/admin/service.js';
 import { CoreAuthService } from './modules/auth/service.js';
 import { CreditService } from './modules/credits/service.js';
+import { Founding100Service } from './modules/founding100/service.js';
 import { LawyerService } from './modules/lawyers/service.js';
 import { PaymentService, SandboxPaymentAdapter } from './modules/payments/service.js';
 import { MarketplaceService } from './modules/marketplace/service.js';
@@ -28,6 +30,10 @@ const authService = new CoreAuthService(new SupabaseCoreRepository(databaseClien
   sessionSecret: env.SESSION_SECRET,
   sessionTtlSeconds: env.SESSION_TTL_SECONDS,
 });
+const founding100Service = new Founding100Service(
+  new SupabaseFounding100Repository(databaseClient),
+  { tokenSecret: env.SESSION_SECRET },
+);
 const lawyerRepository = new SupabaseLawyerRepository(databaseClient);
 const financeRepository = new SupabaseFinanceRepository(databaseClient);
 const marketplaceService = new MarketplaceService(
@@ -57,6 +63,7 @@ const app = buildApp({
     paymentService,
     marketplaceService,
     aiService,
+    founding100Service,
   },
   logger: {
     level: env.LOG_LEVEL,
