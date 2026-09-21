@@ -14,6 +14,8 @@ import { registerAuthRoutes } from './modules/auth/routes.js';
 import type { CoreAuthService } from './modules/auth/service.js';
 import { registerCreditRoutes } from './modules/credits/routes.js';
 import type { CreditService } from './modules/credits/service.js';
+import { registerFounding100Routes } from './modules/founding100/routes.js';
+import type { Founding100Service } from './modules/founding100/service.js';
 import { registerInternalRoutes } from './modules/internal/routes.js';
 import { registerLawyerRoutes } from './modules/lawyers/routes.js';
 import type { LawyerService } from './modules/lawyers/service.js';
@@ -36,6 +38,7 @@ export interface BuildAppOptions {
     paymentService?: PaymentService;
     marketplaceService?: MarketplaceService;
     aiService?: AiService;
+    founding100Service?: Founding100Service;
   };
   logger?: FastifyServerOptions<RawServerDefault>['logger'];
 }
@@ -80,6 +83,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       if (core.aiService) {
         registerAiRoutes(coreApp, { ai: core.aiService, auth: core.service });
       }
+      if (core.founding100Service) {
+        registerFounding100Routes(coreApp, core.founding100Service);
+      }
       if (core.lawyerService) {
         registerLawyerRoutes(coreApp, { auth: core.service, lawyers: core.lawyerService });
       }
@@ -111,6 +117,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         core.creditService,
         core.marketplaceService,
         core.aiService,
+        core.founding100Service,
       );
     });
   }
