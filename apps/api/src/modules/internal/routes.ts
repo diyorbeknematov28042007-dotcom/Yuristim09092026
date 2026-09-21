@@ -197,7 +197,11 @@ export function registerInternalRoutes(
     const action: BotOnboardingAction = parseInput(onboardingActionSchema, request.body);
     const context = await service.updateTelegramOnboarding(params.telegramUserId, action);
     if (context.user.onboardingStatus === 'completed' && founding100Service) {
-      await founding100Service.recordOnboardingComplete(context.user.id);
+      try {
+        await founding100Service.recordOnboardingComplete(context.user.id);
+      } catch (error) {
+        request.log.warn({ err: error }, 'Founding 100 onboarding analytics could not be recorded');
+      }
     }
     return context;
   });
