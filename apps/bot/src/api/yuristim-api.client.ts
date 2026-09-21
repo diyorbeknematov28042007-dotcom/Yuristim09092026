@@ -44,7 +44,10 @@ export interface BotAiStatusView extends AiStatusView {
 
 export interface YuristimApi {
   ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult>;
-  confirmFounding100(telegramUserId: number, token: string): Promise<{ reservationId: string; duplicate: boolean }>;
+  confirmFounding100(
+    telegramUserId: number,
+    token: string,
+  ): Promise<{ reservationId: string; duplicate: boolean }>;
   getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext>;
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext>;
   updateOnboarding(telegramUserId: number, action: BotOnboardingAction): Promise<BotUserContext>;
@@ -176,7 +179,10 @@ const userSchema = z.object({
   updatedAt: z.string(),
 });
 const ensureSchema = z.object({ created: z.boolean(), user: userSchema });
-const founding100ConfirmSchema = z.object({ reservationId: z.string().uuid(), duplicate: z.boolean() });
+const founding100ConfirmSchema = z.object({
+  duplicate: z.boolean(),
+  reservationId: z.string().uuid(),
+});
 const contextSchema = z.object({ hasPin: z.boolean(), user: userSchema });
 const runtimeContextSchema = z.object({
   ai: z.object({
