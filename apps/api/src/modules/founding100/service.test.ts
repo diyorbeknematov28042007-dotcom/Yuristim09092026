@@ -83,13 +83,7 @@ class MemoryFounding100Repository implements Founding100Repository {
     throw new Error('not needed');
   }
 
-  async recordEvent(_input: {
-    eventName: Founding100EventName;
-    source: string;
-    reservationId?: string;
-    dedupeKey?: string;
-    now: Date;
-  }): Promise<void> {}
+  async recordEvent(): Promise<void> {}
 
   async recordOnboardingComplete(): Promise<boolean> {
     return false;
