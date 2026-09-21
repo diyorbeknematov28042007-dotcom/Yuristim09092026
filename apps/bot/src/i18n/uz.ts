@@ -4,6 +4,8 @@ export const uz = {
   roleUser: '👤 Foydalanuvchi',
   roleLawyer: '⚖️ Yurist',
   resumePrompt: 'Siz ro‘yxatdan o‘tishni yakunlamagansiz.',
+  founding100Confirmed: '✅ Birinchi qabul joyingiz tasdiqlandi. Endi ro‘yxatdan o‘tishni yakunlang.',
+  founding100Expired: '⏳ Bu Birinchi qabul rezervatsiyasi muddati tugagan. Saytga qaytib yangi joy oling.',
   continue: '▶️ Davom ettirish',
   reset: '🔄 Yangidan boshlash',
   namePrompt: 'F.I.Sh.ingizni to‘liq kiriting.',
