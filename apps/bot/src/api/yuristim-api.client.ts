@@ -44,6 +44,7 @@ export interface BotAiStatusView extends AiStatusView {
 
 export interface YuristimApi {
   ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult>;
+  confirmFounding100(telegramUserId: number, token: string): Promise<{ reservationId: string; duplicate: boolean }>;
   getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext>;
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext>;
   updateOnboarding(telegramUserId: number, action: BotOnboardingAction): Promise<BotUserContext>;
@@ -175,6 +176,7 @@ const userSchema = z.object({
   updatedAt: z.string(),
 });
 const ensureSchema = z.object({ created: z.boolean(), user: userSchema });
+const founding100ConfirmSchema = z.object({ reservationId: z.string().uuid(), duplicate: z.boolean() });
 const contextSchema = z.object({ hasPin: z.boolean(), user: userSchema });
 const runtimeContextSchema = z.object({
   ai: z.object({
@@ -478,6 +480,18 @@ export class YuristimApiClient implements YuristimApi {
   async ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult> {
     const payload = await this.request('POST', '/internal/telegram/users/ensure', identity);
     return this.parse(ensureSchema, payload);
+  }
+
+  async confirmFounding100(
+    telegramUserId: number,
+    token: string,
+  ): Promise<{ reservationId: string; duplicate: boolean }> {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/founding100/confirm`,
+      { token },
+    );
+    return this.parse(founding100ConfirmSchema, payload);
   }
 
   async getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext> {
