@@ -139,6 +139,16 @@ class FakeApi implements YuristimApi {
     return Promise.resolve({ created: this.created, user: this.data.user });
   }
 
+  confirmFounding100(
+    _telegramUserId: number,
+    _token: string,
+  ): Promise<{ reservationId: string; duplicate: boolean }> {
+    return Promise.resolve({
+      duplicate: false,
+      reservationId: '00000000-0000-4000-8000-000000000099',
+    });
+  }
+
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext> {
     this.requestedTelegramIds.push(telegramUserId);
     return Promise.resolve(this.data);
