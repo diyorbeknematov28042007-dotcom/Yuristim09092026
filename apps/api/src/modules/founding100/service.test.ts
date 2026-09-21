@@ -10,7 +10,13 @@ import { Founding100Service, normalizeFounding100Source } from './service.js';
 class MemoryFounding100Repository implements Founding100Repository {
   private reservations = new Map<
     string,
-    { id: string; tokenHash: string; expiresAt: Date; status: 'reserved' | 'confirmed'; userId?: string }
+    {
+      id: string;
+      tokenHash: string;
+      expiresAt: Date;
+      status: 'reserved' | 'confirmed';
+      userId?: string;
+    }
   >();
   private sequence = 0;
   private lock: Promise<void> = Promise.resolve();
@@ -107,7 +113,9 @@ describe('Founding100Service', () => {
     const duplicate = await service.reserve('request-12345678', 'instagram');
 
     expect(duplicate.reservation.id).toBe(first.reservation.id);
-    expect(duplicate.reservation.startParameter).toBe(first.reservation.startParameter);
+    expect(duplicate.reservation.startParameter).toBe(
+      first.reservation.startParameter,
+    );
     expect(first.reservation.startParameter).toMatch(/^f100_[A-Za-z0-9_-]{43}$/);
   });
 
@@ -124,7 +132,9 @@ describe('Founding100Service', () => {
       ),
     );
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(100);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(
+      100,
+    );
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(9);
     const status = await service.status();
     expect(status.available).toBe(0);
