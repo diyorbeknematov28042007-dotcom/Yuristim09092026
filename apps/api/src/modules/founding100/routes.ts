@@ -28,9 +28,7 @@ export function registerFounding100Routes(
       request.body,
     );
 
-    return reply
-      .status(201)
-      .send(await service.reserve(body.idempotencyKey, body.source));
+    return reply.status(201).send(await service.reserve(body.idempotencyKey, body.source));
   });
 
   app.post('/founding100/events', async (request, reply) => {
