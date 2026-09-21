@@ -1,4 +1,4 @@
-import { type Founding100EventName } from '@yuristim/db';
+import type { Founding100EventName } from '@yuristim/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { parseInput } from '../auth/http.js';
