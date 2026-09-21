@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
   Founding100ConfirmResult,
-  Founding100EventName,
   Founding100Repository,
   Founding100ReservationRow,
   Founding100Status,
