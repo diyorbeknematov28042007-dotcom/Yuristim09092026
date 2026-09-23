@@ -49,7 +49,13 @@ describe('YuristimApiClient', () => {
     expect(headers.get('x-request-id')).toBe('request-1');
     expect(headers.get('x-yuristim-timestamp')).toBe(timestamp);
     expect(headers.get('x-yuristim-signature')).toBe(
-      createInternalSignature(identity, timestamp, secret),
+      createInternalSignature(
+        'POST',
+        '/internal/telegram/users/ensure',
+        identity,
+        timestamp,
+        secret,
+      ),
     );
     expect(headers.get('x-yuristim-signature')).not.toContain(secret);
   });

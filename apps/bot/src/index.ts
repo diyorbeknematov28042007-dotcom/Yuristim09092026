@@ -7,6 +7,7 @@ async function start(): Promise<void> {
     const env = loadBotEnv();
     const bot = createBot({
       apiBaseUrl: env.API_BASE_URL,
+      adminTelegramId: env.ADMIN_TELEGRAM_ID,
       apiTimeoutMilliseconds: env.API_TIMEOUT_MILLISECONDS,
       internalApiSecret: env.INTERNAL_BOT_API_SECRET,
       ...(env.PRIVACY_URL ? { privacyUrl: env.PRIVACY_URL } : {}),

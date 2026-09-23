@@ -286,10 +286,11 @@ export class CoreAuthService {
     if (role === 'lawyer' && !user.full_name) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Full name is required for lawyer onboarding');
     }
+    const nextUser = { ...user, onboarding_role: role };
     return this.repository.updateUser(userId, {
       active_mode: 'user',
       onboarding_role: role,
-      onboarding_status: user.terms_accepted_at ? 'completed' : 'terms_acceptance',
+      onboarding_status: this.nextOnboardingStatus(nextUser),
     });
   }
 
@@ -298,6 +299,13 @@ export class CoreAuthService {
     if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
     this.assertUserActive(user);
     return { hasPin: user.pin_hash !== null, user: this.toUserView(user) };
+  }
+
+  async getTelegramUserForInternal(telegramUserId: number): Promise<UserRow> {
+    const user = await this.repository.findUserByTelegramId(telegramUserId);
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+    this.assertUserActive(user);
+    return user;
   }
 
   async updateTelegramOnboarding(
@@ -375,10 +383,10 @@ export class CoreAuthService {
   }
 
   async switchMode(userId: string, mode: UserMode): Promise<UserRow> {
-    if (mode === 'lawyer') {
+    if (mode === 'lawyer' && !(await this.repository.isLawyerApproved(userId))) {
       throw new AppError(409, 'LAWYER_NOT_VERIFIED', 'Lawyer verification is required');
     }
-    return this.repository.updateUser(userId, { active_mode: 'user' });
+    return this.repository.updateUser(userId, { active_mode: mode });
   }
 
   async getTags(userId: string): Promise<UserTagView[]> {

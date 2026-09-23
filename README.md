@@ -2,9 +2,9 @@
 
 Yuristim — O‘zbekiston fuqarolari va bizneslari uchun yuridik yordam, huquqiy
 hujjatlar va professional yuristlarni yagona platformada birlashtiruvchi LegalTech
-ekotizimi. Repository Phase 3 doirasida database/core auth foundationi hamda
-multilingual Telegram Bot onboarding va navigatsiyasini o‘z ichiga oladi;
-marketplace, payment, AI va lawyer verification keyingi fazalarga qoldirilgan.
+ekotizimi. Repository Phase 4 doirasida database/core auth foundationi, multilingual
+Telegram Bot hamda lawyer profile va verification lifecycle'ni o‘z ichiga oladi;
+marketplace, payment, credits va AI keyingi fazalarga qoldirilgan.
 
 ## Arxitektura
 
@@ -21,6 +21,8 @@ Core auth Telegram identity, bir martalik login challenge, Argon2id PIN va
 server-controlled sessionlardan foydalanadi. Batafsil:
 [architecture](docs/architecture.md), [authentication](docs/authentication.md) va
 [database](docs/database.md). Bot tafsilotlari: [telegram-bot](docs/telegram-bot.md).
+Lawyer review va deployment: [lawyer verification](docs/lawyer-verification.md),
+[deployment](docs/deployment.md).
 
 ## Monorepo strukturasi
 
@@ -53,7 +55,7 @@ server-controlled sessionlardan foydalanadi. Batafsil:
 ```bash
 git clone https://github.com/diyorbeknematov28042007-dotcom/Yuristim09092026.git
 cd Yuristim09092026
-git checkout phase/03-telegram-bot-core
+git checkout phase/04-lawyer-verification
 corepack enable
 pnpm install --frozen-lockfile
 ```
@@ -67,10 +69,12 @@ cp .env.example .env
 API uchun `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`, `SESSION_SECRET` va `INTERNAL_BOT_API_SECRET`
 majburiy. Bot API bilan bir xil `INTERNAL_BOT_API_SECRET` ishlatadi.
-`PUBLIC_OFFER_URL`, `PRIVACY_URL` va `SUPPORT_USERNAME` faqat real qiymat mavjud
-bo‘lganda beriladi; bo‘sh qiymat uchun Bot uydirma link ko‘rsatmaydi. Secretlar
-faqat local/hosting environmentida saqlanadi; `NEXT_PUBLIC_*`dan boshqa qiymat
-browser bundle'ga kiritilmaydi.
+`ADMIN_BOOTSTRAP_USERNAME` va `ADMIN_BOOTSTRAP_PASSWORD` faqat birinchi adminni
+xavfsiz bootstrap qilish zarur bo‘lganda juft holda beriladi. Bot uchun
+`ADMIN_TELEGRAM_ID` majburiy; `PUBLIC_OFFER_URL`, `PRIVACY_URL` va
+`SUPPORT_USERNAME` faqat real qiymat mavjud bo‘lganda beriladi. Secretlar faqat
+local/hosting environmentida saqlanadi; `NEXT_PUBLIC_*`dan boshqa qiymat browser
+bundle'ga kiritilmaydi.
 
 ## Development
 
@@ -108,21 +112,24 @@ supabase test db
 
 ## App'lar
 
-- **Web:** responsive Next.js skeleton; API-first client.
+- **Web:** responsive Next.js skeleton va approved lawyer uchun API-first `/[duid]`
+  public profil route'i.
 - **API:** health/readiness, Core User API, Telegram auth challenge, PIN,
-  HttpOnly session va HMAC-protected Bot endpointlari.
+  HttpOnly session, lawyer verification/admin review va HMAC-protected Bot
+  endpointlari.
 - **Bot:** grammY transport; `/start`, persistent onboarding, uch tilli RK/IK,
-  settings/profile va feature shell navigatsiyasi. Telegram identity va barcha
-  business state imzolangan internal API orqali yuradi; database'ga bevosita kirmaydi.
+  settings/profile, persistent lawyer verification, multi-specialization, private
+  fayl upload va mode switch. Barcha business state imzolangan internal API orqali
+  yuradi; database'ga bevosita kirmaydi.
 
 ## Deployment
 
 - **Vercel / Web:** root `apps/web`; build
   `cd ../.. && pnpm --filter @yuristim/web... build`.
-- **Railway / API:** repository root; build
+- **Railway / API:** config `apps/api/railway.toml`; build
   `pnpm --filter @yuristim/api... build`; start
   `pnpm --filter @yuristim/api start`; healthcheck `/health`.
-- **Railway / Bot:** repository root; build
+- **Railway / Bot:** config `apps/bot/railway.toml`; build
   `pnpm --filter @yuristim/bot... build`; start
   `pnpm --filter @yuristim/bot start`.
 - **Supabase:** `supabase/migrations` production schema source of truth.

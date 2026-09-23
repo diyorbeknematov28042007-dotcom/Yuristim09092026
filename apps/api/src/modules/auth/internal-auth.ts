@@ -5,9 +5,15 @@ import { safeEqual } from './crypto.js';
 
 const INTERNAL_REQUEST_WINDOW_SECONDS = 300;
 
-export function signInternalRequest(body: unknown, timestamp: string, secret: string): string {
+export function signInternalRequest(
+  method: string,
+  path: string,
+  body: unknown,
+  timestamp: string,
+  secret: string,
+): string {
   return `sha256=${createHmac('sha256', secret)
-    .update(`${timestamp}.${JSON.stringify(body)}`)
+    .update(`${timestamp}.${method.toUpperCase()}.${path}.${JSON.stringify(body)}`)
     .digest('hex')}`;
 }
 
@@ -29,7 +35,8 @@ export function verifyInternalRequest(
     throw new AppError(401, 'UNAUTHORIZED', 'Internal request timestamp is invalid');
   }
 
-  const expected = signInternalRequest(body, timestamp, secret);
+  const path = new URL(request.url, 'http://internal.local').pathname;
+  const expected = signInternalRequest(request.method, path, body, timestamp, secret);
   if (!safeEqual(signature, expected)) {
     throw new AppError(401, 'UNAUTHORIZED', 'Internal request signature is invalid');
   }

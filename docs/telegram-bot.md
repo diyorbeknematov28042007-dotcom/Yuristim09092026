@@ -26,9 +26,17 @@ Persistent state:
 4. `terms_acceptance` — oferta qabul qilish;
 5. `completed` — User main menu.
 
-Lawyer intention `active_mode=user` holatini saqlaydi. Lawyer menu renderer mavjud,
-ammo faqat backend `active_mode=lawyer` qaytarganda ishlatiladi; verification Phase
-4'ga qoldirilgan.
+Lawyer intention `active_mode=user` holatini saqlaydi. Verification tasdiqlangach
+backend mode switch'ga ruxsat beradi va Lawyer menu renderer ishlatiladi.
+
+## Lawyer verification
+
+Settings'dagi Lawyer profile persistent verification oqimini ochadi: full name,
+region, specialization toggle, tajriba, bio, optional narx, profil rasmi,
+verification hujjati, summary va submit. Har qadam API'dagi draft snapshotga
+saqlanadi. Back/Cancel mavjud; rejected reason ko‘rsatiladi va yangi resubmission
+oldingi tarixni overwrite qilmaydi. Approved profil o‘zgarishi `profile_update`
+review yaratadi, eski public profil esa approvalgacha saqlanadi.
 
 ## Menyular va navigatsiya
 
@@ -48,7 +56,7 @@ rad etiladi. Telegram user ID callbackdan emas, doim `ctx.from.id`dan olinadi.
 
 ## Security va failure UX
 
-- Bot → API har so‘rovi body+timestamp HMAC bilan imzolanadi.
+- Bot → API har so‘rovi timestamp, HTTP method, path va body HMAC bilan imzolanadi.
 - F.I.Sh. whitespace normalization bilan 2–160 belgi oralig‘ida tekshiriladi.
 - Blocked user alohida localized javob oladi.
 - API stack trace, secret, token yoki raw response Telegramga yuborilmaydi.
@@ -58,7 +66,7 @@ rad etiladi. Telegram user ID callbackdan emas, doim `ctx.from.id`dan olinadi.
 ## Local run
 
 Root `.env`da `TELEGRAM_BOT_TOKEN`, `API_BASE_URL` va API bilan bir xil
-`INTERNAL_BOT_API_SECRET`ni sozlang. Ixtiyoriy real qiymatlar:
+`INTERNAL_BOT_API_SECRET` va `ADMIN_TELEGRAM_ID`ni sozlang. Ixtiyoriy real qiymatlar:
 `PUBLIC_OFFER_URL`, `PRIVACY_URL`, `SUPPORT_USERNAME`.
 
 ```bash
@@ -77,5 +85,6 @@ pnpm build
 ```
 
 Testlar new/returning/unfinished/blocked `/start`, user va lawyer onboarding, reset,
-uch til, menus, callback validation, HMAC, timeout, error mapping va malformed API
-response holatlarini qamraydi.
+uch til, verification draft/submit/rejected/approved mode switch, menus, callback
+validation, HMAC, timeout, error mapping va malformed API response holatlarini
+qamraydi.

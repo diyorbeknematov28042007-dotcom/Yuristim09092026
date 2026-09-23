@@ -42,10 +42,10 @@ describe('core auth and user API', () => {
     await app.close();
   });
 
-  function internalHeaders(body: unknown): Record<string, string> {
+  function internalHeaders(method: string, path: string, body: unknown): Record<string, string> {
     const timestamp = String(Math.floor(Date.now() / 1_000));
     return {
-      'x-yuristim-signature': signInternalRequest(body, timestamp, INTERNAL_SECRET),
+      'x-yuristim-signature': signInternalRequest(method, path, body, timestamp, INTERNAL_SECRET),
       'x-yuristim-timestamp': timestamp,
     };
   }
@@ -55,7 +55,7 @@ describe('core auth and user API', () => {
     const login = started.json<{ challenge: string; requestId: string }>();
     const confirmBody = { challenge: login.challenge, identity };
     const internalConfirmation = await app.inject({
-      headers: internalHeaders(confirmBody),
+      headers: internalHeaders('POST', '/internal/telegram/auth/confirm', confirmBody),
       method: 'POST',
       payload: confirmBody,
       url: '/internal/telegram/auth/confirm',
@@ -92,7 +92,7 @@ describe('core auth and user API', () => {
     expect(rejected.statusCode).toBe(401);
 
     const created = await app.inject({
-      headers: internalHeaders(identity),
+      headers: internalHeaders('POST', '/internal/telegram/users/ensure', identity),
       method: 'POST',
       payload: identity,
       url: '/internal/telegram/users/ensure',
@@ -101,7 +101,7 @@ describe('core auth and user API', () => {
 
     const changedIdentity = { ...identity, telegramUsername: 'updated_username' };
     const updated = await app.inject({
-      headers: internalHeaders(changedIdentity),
+      headers: internalHeaders('POST', '/internal/telegram/users/ensure', changedIdentity),
       method: 'POST',
       payload: changedIdentity,
       url: '/internal/telegram/users/ensure',
@@ -138,7 +138,7 @@ describe('core auth and user API', () => {
     const login = started.json<{ challenge: string; requestId: string }>();
     const confirmationBody = { challenge: login.challenge, identity };
     await app.inject({
-      headers: internalHeaders(confirmationBody),
+      headers: internalHeaders('POST', '/internal/telegram/auth/confirm', confirmationBody),
       method: 'POST',
       payload: confirmationBody,
       url: '/internal/telegram/auth/confirm',
@@ -226,14 +226,18 @@ describe('core auth and user API', () => {
 
   it('persists allowlisted Bot onboarding actions and preserves account identity on reset', async () => {
     await app.inject({
-      headers: internalHeaders(identity),
+      headers: internalHeaders('POST', '/internal/telegram/users/ensure', identity),
       method: 'POST',
       payload: identity,
       url: '/internal/telegram/users/ensure',
     });
     const original = [...repository.users.values()][0]!;
     const context = await app.inject({
-      headers: internalHeaders(undefined),
+      headers: internalHeaders(
+        'GET',
+        `/internal/telegram/users/${identity.telegramUserId}/context`,
+        undefined,
+      ),
       method: 'GET',
       url: `/internal/telegram/users/${identity.telegramUserId}/context`,
     });
@@ -246,7 +250,11 @@ describe('core auth and user API', () => {
       { action: 'accept_terms', termsVersion: '2026-09' },
     ]) {
       const response = await app.inject({
-        headers: internalHeaders(action),
+        headers: internalHeaders(
+          'PATCH',
+          `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+          action,
+        ),
         method: 'PATCH',
         payload: action,
         url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
@@ -262,7 +270,11 @@ describe('core auth and user API', () => {
     const acceptedAt = repository.users.get(original.id)?.terms_accepted_at;
     const duplicateTerms = { action: 'accept_terms', termsVersion: '2026-09' };
     await app.inject({
-      headers: internalHeaders(duplicateTerms),
+      headers: internalHeaders(
+        'PATCH',
+        `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+        duplicateTerms,
+      ),
       method: 'PATCH',
       payload: duplicateTerms,
       url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
@@ -271,7 +283,11 @@ describe('core auth and user API', () => {
 
     const unsafe = { action: 'reset', duid: 'yr_AAAAAAAAAAAAAAAA' };
     const rejected = await app.inject({
-      headers: internalHeaders(unsafe),
+      headers: internalHeaders(
+        'PATCH',
+        `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+        unsafe,
+      ),
       method: 'PATCH',
       payload: unsafe,
       url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
@@ -280,7 +296,11 @@ describe('core auth and user API', () => {
 
     const resetAction = { action: 'reset' };
     const reset = await app.inject({
-      headers: internalHeaders(resetAction),
+      headers: internalHeaders(
+        'PATCH',
+        `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
+        resetAction,
+      ),
       method: 'PATCH',
       payload: resetAction,
       url: `/internal/telegram/users/${identity.telegramUserId}/onboarding`,
@@ -299,7 +319,7 @@ describe('core auth and user API', () => {
 
   it('accepts a lawyer intention before name and keeps active mode as user', async () => {
     await app.inject({
-      headers: internalHeaders(identity),
+      headers: internalHeaders('POST', '/internal/telegram/users/ensure', identity),
       method: 'POST',
       payload: identity,
       url: '/internal/telegram/users/ensure',
@@ -307,14 +327,14 @@ describe('core auth and user API', () => {
     const url = `/internal/telegram/users/${identity.telegramUserId}/onboarding`;
     const language = { action: 'set_language', language: 'uz' };
     await app.inject({
-      headers: internalHeaders(language),
+      headers: internalHeaders('PATCH', url, language),
       method: 'PATCH',
       payload: language,
       url,
     });
     const role = { action: 'set_role', role: 'lawyer' };
     const response = await app.inject({
-      headers: internalHeaders(role),
+      headers: internalHeaders('PATCH', url, role),
       method: 'PATCH',
       payload: role,
       url,
