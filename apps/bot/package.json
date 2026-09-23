@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@yuristim/config": "workspace:*",
+    "@yuristim/types": "workspace:*",
     "grammy": "1.46.0",
     "zod": "4.5.4"
   },

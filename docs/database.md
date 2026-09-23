@@ -25,6 +25,11 @@ aniq Yuristim projectda bajarildi.
 Session user/expiry hamda login status/expiry uchun indexlar mavjud. `updated_at`
 private trigger function orqali avtomatik yangilanadi.
 
+Phase 3 migrationi persistent onboarding state'ni
+`language_selection → role_selection → name_required (lawyer) → terms_acceptance → completed`
+ko‘rinishida aniqladi. `completed` holat database constrainti bilan language, role,
+terms va lawyer uchun full name mavjudligini talab qiladi. Mavjud data reset qilinmadi.
+
 ## Access model
 
 Barcha core business tablelarda RLS yoqilgan va forced. Client role'lari uchun
