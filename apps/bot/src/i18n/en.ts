@@ -6,6 +6,9 @@ export const en = {
   roleUser: '👤 User',
   roleLawyer: '⚖️ Lawyer',
   resumePrompt: 'You have not finished registration.',
+  founding100Confirmed: '✅ Your Founding 100 place is confirmed. Now complete registration.',
+  founding100Expired:
+    '⏳ This Founding 100 reservation has expired. Return to the website and reserve a new place.',
   continue: '▶️ Continue',
   reset: '🔄 Start over',
   namePrompt: 'Enter your full legal name.',

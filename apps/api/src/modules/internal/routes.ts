@@ -17,6 +17,7 @@ import type { LawyerService } from '../lawyers/service.js';
 import type { CreditService } from '../credits/service.js';
 import type { MarketplaceService } from '../marketplace/service.js';
 import type { AiService } from '../ai/service.js';
+import type { Founding100Service } from '../founding100/service.js';
 import { logPerformance } from '../../lib/performance.js';
 
 const identitySchema = z
@@ -117,6 +118,7 @@ export function registerInternalRoutes(
   creditService?: CreditService,
   marketplaceService?: MarketplaceService,
   aiService?: AiService,
+  founding100Service?: Founding100Service,
 ): void {
   app.post('/internal/telegram/users/ensure', async (request, reply) => {
     verifyInternalRequest(request, request.body, internalBotSecret);
@@ -193,7 +195,15 @@ export function registerInternalRoutes(
       request.params,
     );
     const action: BotOnboardingAction = parseInput(onboardingActionSchema, request.body);
-    return service.updateTelegramOnboarding(params.telegramUserId, action);
+    const context = await service.updateTelegramOnboarding(params.telegramUserId, action);
+    if (context.user.onboardingStatus === 'completed' && founding100Service) {
+      try {
+        await founding100Service.recordOnboardingComplete(context.user.id);
+      } catch (error) {
+        request.log.warn({ err: error }, 'Founding 100 onboarding analytics could not be recorded');
+      }
+    }
+    return context;
   });
 
   app.post('/internal/telegram/auth/confirm', async (request) => {
@@ -204,6 +214,22 @@ export function registerInternalRoutes(
     );
     return service.confirmTelegramLogin(body.challenge, body.identity);
   });
+
+  if (founding100Service) {
+    app.post('/internal/telegram/users/:telegramUserId/founding100/confirm', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const body = parseInput(
+        z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict(),
+        request.body,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return founding100Service.confirmTelegramStart(body.token, user.id);
+    });
+  }
 
   if (creditService) {
     app.get('/internal/telegram/users/:telegramUserId/credits/balance', async (request) => {
