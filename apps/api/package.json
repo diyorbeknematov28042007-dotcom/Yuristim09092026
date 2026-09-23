@@ -1,0 +1,24 @@
+{
+  "name": "@yuristim/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/server.ts",
+    "lint": "eslint src",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@yuristim/config": "workspace:*",
+    "@yuristim/types": "workspace:*",
+    "fastify": "5.12.3",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "tsx": "4.23.13"
+  }
+}
