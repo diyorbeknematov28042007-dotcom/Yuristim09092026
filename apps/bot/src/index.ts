@@ -10,6 +10,8 @@ async function start(): Promise<void> {
       adminTelegramId: env.ADMIN_TELEGRAM_ID,
       apiTimeoutMilliseconds: env.API_TIMEOUT_MILLISECONDS,
       internalApiSecret: env.INTERNAL_BOT_API_SECRET,
+      marketplaceChannelId: env.MARKETPLACE_CHANNEL_ID,
+      marketplaceChannelUrl: env.MARKETPLACE_CHANNEL_URL,
       ...(env.PRIVACY_URL ? { privacyUrl: env.PRIVACY_URL } : {}),
       ...(env.PUBLIC_OFFER_URL ? { publicOfferUrl: env.PUBLIC_OFFER_URL } : {}),
       ...(env.SUPPORT_USERNAME ? { supportUsername: env.SUPPORT_USERNAME } : {}),

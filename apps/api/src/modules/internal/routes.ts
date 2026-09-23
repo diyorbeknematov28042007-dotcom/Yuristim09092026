@@ -4,6 +4,7 @@ import {
   USER_ROLES,
   type BotOnboardingAction,
   type BotVerificationAction,
+  type BotMarketplaceDraftAction,
   type Language,
 } from '@yuristim/types';
 import type { FastifyInstance } from 'fastify';
@@ -13,6 +14,7 @@ import { verifyInternalRequest } from '../auth/internal-auth.js';
 import type { CoreAuthService } from '../auth/service.js';
 import type { LawyerService } from '../lawyers/service.js';
 import type { CreditService } from '../credits/service.js';
+import type { MarketplaceService } from '../marketplace/service.js';
 
 const identitySchema = z
   .object({
@@ -70,6 +72,35 @@ const verificationActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('cancel') }).strict(),
   z.object({ action: z.literal('submit') }).strict(),
 ]);
+const marketplaceDraftActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('start') }).strict(),
+  z
+    .object({
+      action: z.literal('set_specialization'),
+      specializationCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('set_description'),
+      description: z.string().trim().min(20).max(1500),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('set_region'),
+      region: z.string().trim().min(2).max(120).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('set_additional_details'),
+      additionalDetails: z.string().trim().min(2).max(1500).nullable(),
+    })
+    .strict(),
+  z.object({ action: z.literal('back') }).strict(),
+  z.object({ action: z.literal('cancel') }).strict(),
+]);
 
 function parseIdentity(input: unknown): TelegramIdentityInput {
   return parseInput(identitySchema, input);
@@ -81,6 +112,7 @@ export function registerInternalRoutes(
   internalBotSecret: string,
   lawyerService?: LawyerService,
   creditService?: CreditService,
+  marketplaceService?: MarketplaceService,
 ): void {
   app.post('/internal/telegram/users/ensure', async (request, reply) => {
     verifyInternalRequest(request, request.body, internalBotSecret);
@@ -180,6 +212,205 @@ export function registerInternalRoutes(
         return { items: await creditService.acceptProducts(user.id, userLanguage(user.language)) };
       },
     );
+  }
+
+  if (marketplaceService) {
+    app.get('/internal/telegram/users/:telegramUserId/marketplace/draft', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return { draft: await marketplaceService.getDraft(user.id) };
+    });
+
+    app.patch('/internal/telegram/users/:telegramUserId/marketplace/draft', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const action: BotMarketplaceDraftAction = parseInput(
+        marketplaceDraftActionSchema,
+        request.body,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return { draft: await marketplaceService.updateDraft(user, action) };
+    });
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/marketplace/confirm',
+      async (request, reply) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const body = parseInput(
+          z.object({ idempotencyKey: z.string().min(8).max(128) }).strict(),
+          request.body,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return reply.status(201).send({
+          post: await marketplaceService.confirmDraft(
+            user,
+            body.idempotencyKey,
+            userLanguage(user.language),
+          ),
+        });
+      },
+    );
+
+    app.get('/internal/telegram/users/:telegramUserId/marketplace/requests', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return { items: await marketplaceService.listOwn(user.id, userLanguage(user.language)) };
+    });
+
+    app.get(
+      '/internal/telegram/users/:telegramUserId/marketplace/requests/:postId/acceptances',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ postId: z.string().uuid(), telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return {
+          items: await marketplaceService.acceptances(
+            params.postId,
+            user.id,
+            userLanguage(user.language),
+          ),
+        };
+      },
+    );
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/marketplace/requests/:postId/select',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ postId: z.string().uuid(), telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const body = parseInput(
+          z.object({ acceptanceId: z.string().regex(/^ma_[a-f0-9]{20}$/) }).strict(),
+          request.body,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return marketplaceService.select(user.id, params.postId, body.acceptanceId);
+      },
+    );
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/marketplace/requests/:postId/cancel',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ postId: z.string().uuid(), telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        parseInput(z.object({}).strict(), request.body ?? {});
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return marketplaceService.cancel(user.id, params.postId, userLanguage(user.language));
+      },
+    );
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/marketplace/requests/:postId/review',
+      async (request, reply) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(
+          z.object({ postId: z.string().uuid(), telegramUserId: telegramUserIdSchema }).strict(),
+          request.params,
+        );
+        const body = parseInput(
+          z
+            .object({
+              comment: z.string().trim().min(2).max(500).optional(),
+              rating: z.number().int().min(1).max(5),
+            })
+            .strict(),
+          request.body,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return reply.status(201).send({
+          review: await marketplaceService.review(user.id, { ...body, postId: params.postId }),
+        });
+      },
+    );
+
+    app.get('/internal/telegram/marketplace/listings/:publicIdentifier', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ publicIdentifier: z.string().regex(/^mp_[a-f0-9]{24}$/) }).strict(),
+        request.params,
+      );
+      const query = parseInput(
+        z.object({ language: z.enum(LANGUAGES).default('uz') }).strict(),
+        request.query,
+      );
+      return {
+        post: await marketplaceService.publicContext(params.publicIdentifier, query.language),
+      };
+    });
+
+    app.post(
+      '/internal/telegram/users/:telegramUserId/marketplace/listings/:publicIdentifier/accept',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        parseInput(z.object({}).strict(), request.body ?? {});
+        const params = parseInput(
+          z
+            .object({
+              publicIdentifier: z.string().regex(/^mp_[a-f0-9]{24}$/),
+              telegramUserId: telegramUserIdSchema,
+            })
+            .strict(),
+          request.params,
+        );
+        const user = await service.getTelegramUserForInternal(params.telegramUserId);
+        return marketplaceService.accept(user, params.publicIdentifier);
+      },
+    );
+
+    app.get('/internal/telegram/users/:telegramUserId/marketplace/dashboard', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(
+        z.object({ telegramUserId: telegramUserIdSchema }).strict(),
+        request.params,
+      );
+      const user = await service.getTelegramUserForInternal(params.telegramUserId);
+      return marketplaceService.lawyerDashboard(user.id, userLanguage(user.language));
+    });
+
+    app.patch(
+      '/internal/telegram/marketplace/requests/:postId/channel-message',
+      async (request) => {
+        verifyInternalRequest(request, request.body, internalBotSecret);
+        const params = parseInput(z.object({ postId: z.string().uuid() }).strict(), request.params);
+        const body = parseInput(
+          z.object({ messageId: z.number().int().positive() }).strict(),
+          request.body,
+        );
+        await marketplaceService.recordChannelMessage(params.postId, body.messageId);
+        return { ok: true };
+      },
+    );
+
+    app.post('/internal/telegram/marketplace/requests/:postId/channel-failure', async (request) => {
+      verifyInternalRequest(request, request.body, internalBotSecret);
+      const params = parseInput(z.object({ postId: z.string().uuid() }).strict(), request.params);
+      parseInput(z.object({}).strict(), request.body ?? {});
+      await marketplaceService.recordChannelFailure(params.postId);
+      return { ok: true };
+    });
   }
 
   if (!lawyerService) return;

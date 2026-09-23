@@ -84,6 +84,15 @@ export type ApiErrorCode =
   | 'PAYMENT_ALREADY_PROCESSED'
   | 'PAYMENT_VERIFICATION_FAILED'
   | 'INVALID_PAYMENT_STATE'
+  | 'MARKETPLACE_POST_NOT_FOUND'
+  | 'MARKETPLACE_POST_CLOSED'
+  | 'MARKETPLACE_CAPACITY_REACHED'
+  | 'MARKETPLACE_ALREADY_ACCEPTED'
+  | 'MARKETPLACE_OWNER_CANNOT_ACCEPT'
+  | 'MARKETPLACE_FORBIDDEN'
+  | 'MARKETPLACE_ACCEPTANCE_NOT_FOUND'
+  | 'MARKETPLACE_REVIEW_NOT_ALLOWED'
+  | 'INSUFFICIENT_ACCEPT_BALANCE'
   | 'NOT_FOUND'
   | 'INTERNAL_ERROR';
 
@@ -293,3 +302,62 @@ export interface PaymentView {
   paidAt: string | null;
   failedAt: string | null;
 }
+
+export const MARKETPLACE_POST_STATUSES = [
+  'draft',
+  'open',
+  'selected',
+  'cancelled',
+  'expired',
+] as const;
+export type MarketplacePostStatus = (typeof MARKETPLACE_POST_STATUSES)[number];
+
+export interface MarketplacePostView {
+  id: string;
+  publicIdentifier: string;
+  specializationCode: string;
+  specializationName: string;
+  description: string;
+  region: string | null;
+  additionalDetails: string | null;
+  status: MarketplacePostStatus;
+  acceptanceCount: number;
+  maxAcceptances: number;
+  selectedAcceptanceId: string | null;
+  telegramChannelMessageId: number | null;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export interface MarketplaceAcceptanceView {
+  id: string;
+  status: 'accepted' | 'selected' | 'not_selected' | 'cancelled';
+  acceptedAt: string;
+  lawyer: {
+    fullName: string;
+    duid: string;
+    publicSlug: string;
+    region: string | null;
+    ratingAverage: number;
+    ratingCount: number;
+    specializations: SpecializationView[];
+    verified: true;
+  };
+}
+
+export interface MarketplaceDraftView {
+  specializationCode: string | null;
+  description: string | null;
+  region: string | null;
+  additionalDetails: string | null;
+  step: 'specialization' | 'description' | 'region' | 'additional_details' | 'preview';
+}
+
+export type BotMarketplaceDraftAction =
+  | { action: 'start' }
+  | { action: 'set_specialization'; specializationCode: string }
+  | { action: 'set_description'; description: string }
+  | { action: 'set_region'; region: string | null }
+  | { action: 'set_additional_details'; additionalDetails: string | null }
+  | { action: 'back' }
+  | { action: 'cancel' };

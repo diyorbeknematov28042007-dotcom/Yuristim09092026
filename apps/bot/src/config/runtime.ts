@@ -4,4 +4,6 @@ export interface BotRuntimeConfig {
   publicOfferUrl?: string;
   supportUsername?: string;
   termsVersion: string;
+  marketplaceChannelId: number;
+  marketplaceChannelUrl: string;
 }
