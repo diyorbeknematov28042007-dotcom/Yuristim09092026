@@ -36,8 +36,12 @@ export async function showVerificationStep(
   language: Language,
   verification?: LawyerVerificationView | null,
 ): Promise<void> {
-  const lawyer = await context.yuristimApi.getLawyerContext(context.from!.id);
-  const current = verification ?? lawyer.verification;
+  let lawyer: BotLawyerContext | null = null;
+  let current = verification;
+  if (current === undefined) {
+    lawyer = await context.yuristimApi.getLawyerContext(context.from!.id);
+    current = lawyer.verification;
+  }
   if (!current || current.status !== 'draft') {
     await showLawyerProfile(context, language);
     return;
@@ -55,6 +59,7 @@ export async function showVerificationStep(
       });
       break;
     case 'specializations':
+      lawyer ??= await context.yuristimApi.getLawyerContext(context.from!.id);
       await editOrReply(context, t(language, 'verificationSpecializations'), {
         reply_markup: specializationsKeyboard(language, lawyer, draft),
       });
@@ -85,6 +90,7 @@ export async function showVerificationStep(
       });
       break;
     case 'summary':
+      lawyer ??= await context.yuristimApi.getLawyerContext(context.from!.id);
       await editOrReply(context, summary(language, draft, lawyer), {
         reply_markup: submitKeyboard(language),
       });

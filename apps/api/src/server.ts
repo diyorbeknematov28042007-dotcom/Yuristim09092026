@@ -1,7 +1,9 @@
 import {
   createServerDatabaseClient,
+  SupabaseAiRepository,
   SupabaseCoreRepository,
   SupabaseFinanceRepository,
+  SupabaseFounding100Repository,
   SupabaseLawyerRepository,
   SupabaseMarketplaceRepository,
 } from '@yuristim/db';
@@ -10,9 +12,12 @@ import { loadApiEnv } from './config/env.js';
 import { AdminService } from './modules/admin/service.js';
 import { CoreAuthService } from './modules/auth/service.js';
 import { CreditService } from './modules/credits/service.js';
+import { Founding100Service } from './modules/founding100/service.js';
 import { LawyerService } from './modules/lawyers/service.js';
 import { PaymentService, SandboxPaymentAdapter } from './modules/payments/service.js';
 import { MarketplaceService } from './modules/marketplace/service.js';
+import { createAiGateway } from './modules/ai/runtime.js';
+import { AiService } from './modules/ai/service.js';
 
 const env = loadApiEnv();
 const databaseClient = createServerDatabaseClient({
@@ -25,12 +30,18 @@ const authService = new CoreAuthService(new SupabaseCoreRepository(databaseClien
   sessionSecret: env.SESSION_SECRET,
   sessionTtlSeconds: env.SESSION_TTL_SECONDS,
 });
+const founding100Service = new Founding100Service(
+  new SupabaseFounding100Repository(databaseClient),
+  { tokenSecret: env.SESSION_SECRET },
+);
 const lawyerRepository = new SupabaseLawyerRepository(databaseClient);
 const financeRepository = new SupabaseFinanceRepository(databaseClient);
 const marketplaceService = new MarketplaceService(
   new SupabaseMarketplaceRepository(databaseClient),
 );
 const creditService = new CreditService(financeRepository);
+const aiRepository = new SupabaseAiRepository(databaseClient);
+const aiService = new AiService(aiRepository, createAiGateway(env, aiRepository), creditService);
 const paymentService = new PaymentService(
   financeRepository,
   new SandboxPaymentAdapter(env.PAYMENT_WEBHOOK_SECRET),
@@ -51,6 +62,8 @@ const app = buildApp({
     creditService,
     paymentService,
     marketplaceService,
+    aiService,
+    founding100Service,
   },
   logger: {
     level: env.LOG_LEVEL,

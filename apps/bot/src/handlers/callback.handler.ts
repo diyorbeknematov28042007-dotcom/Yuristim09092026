@@ -39,21 +39,65 @@ import {
   showMarketplaceReview,
   showMarketplaceUserHome,
 } from '../services/marketplace.service.js';
+import {
+  leaveAiChat,
+  showAiConversation,
+  showAiHistory,
+  showAiHome,
+  startNewAiConversation,
+  switchAiMode,
+} from '../services/ai.service.js';
+import { elapsedBotMilliseconds, recordBotPerformance } from '../observability/performance.js';
 
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('callback_query:data', async (context) => {
     const callback = parseCallbackData(context.callbackQuery.data);
     if (!callback || !context.from) {
-      await context.answerCallbackQuery({
-        show_alert: true,
-        text: t(telegramLanguage(context.from?.language_code), 'invalidAction'),
-      });
+      let acknowledged = false;
+      try {
+        await context.answerCallbackQuery({
+          show_alert: true,
+          text: t(telegramLanguage(context.from?.language_code), 'invalidAction'),
+        });
+        acknowledged = true;
+      } finally {
+        recordBotPerformance('callback_ack', {
+          durationMilliseconds: elapsedBotMilliseconds(),
+          success: acknowledged,
+        });
+      }
       return;
     }
-    await context.answerCallbackQuery();
-
+    let acknowledged = false;
+    try {
+      await context.answerCallbackQuery();
+      acknowledged = true;
+    } finally {
+      recordBotPerformance('callback_ack', {
+        durationMilliseconds: elapsedBotMilliseconds(),
+        success: acknowledged,
+      });
+    }
     let data = await context.yuristimApi.getTelegramUserContext(context.from.id);
+    recordBotPerformance('bot_context_ready', {
+      durationMilliseconds: elapsedBotMilliseconds(),
+    });
     let language = data.user.language ?? telegramLanguage(context.from.language_code);
+    const controllerCallbacks = new Set([
+      'ai:back',
+      'ai:new',
+      'ai:history',
+      'ai:mode:fast',
+      'ai:mode:expert',
+    ]);
+    if (controllerCallbacks.has(callback)) {
+      const callbackMessageId = context.callbackQuery.message?.message_id;
+      const status = await context.yuristimApi.getAiStatus(context.from.id);
+      if (!callbackMessageId || status.telegramControlMessageId !== callbackMessageId) {
+        await context.reply(t(language, 'aiControllerExpired'));
+        return;
+      }
+    }
 
     if (callback.startsWith('lang:')) {
       language = callback.slice(5) as Language;
@@ -136,7 +180,28 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       return;
     }
     if (callback === 'nav:ai') {
-      await editOrReply(context, t(language, 'aiLater'));
+      await showAiHome(context, language);
+      return;
+    }
+    if (callback === 'ai:back') {
+      await leaveAiChat(context);
+      await showMainMenu(context, data);
+      return;
+    }
+    if (callback === 'ai:new') {
+      await startNewAiConversation(context, language);
+      return;
+    }
+    if (callback === 'ai:history') {
+      await showAiHistory(context, language);
+      return;
+    }
+    if (callback === 'ai:mode:fast' || callback === 'ai:mode:expert') {
+      await switchAiMode(context, language, callback.endsWith('expert') ? 'expert' : 'fast');
+      return;
+    }
+    if (callback.startsWith('ai:open:')) {
+      await showAiConversation(context, language, callback.slice('ai:open:'.length));
       return;
     }
     if (callback === 'nav:balance') {
@@ -446,6 +511,10 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
       return;
     }
 
+    if (callback === 'questions:ai') {
+      await showAiHome(context, language);
+      return;
+    }
     if (callback.startsWith('questions:')) {
       const text =
         callback === 'questions:support' && context.botConfig.supportUsername

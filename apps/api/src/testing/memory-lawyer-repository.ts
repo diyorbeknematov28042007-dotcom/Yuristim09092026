@@ -7,6 +7,7 @@ import type {
   LawyerProfileRecord,
   LawyerProfileRow,
   LawyerRepository,
+  LawyerRoutingProfile,
   LawyerSearchInput,
   LawyerVerificationRow,
   SpecializationRow,
@@ -40,6 +41,13 @@ export class MemoryLawyerRepository implements LawyerRepository {
   findProfileByUserId(userId: string): Promise<LawyerProfileRecord | null> {
     const profile = [...this.profiles.values()].find((item) => item.user_id === userId);
     return Promise.resolve(profile ? this.record(profile) : null);
+  }
+
+  findRoutingProfileByUserId(userId: string): Promise<LawyerRoutingProfile | null> {
+    const profile = [...this.profiles.values()].find((item) => item.user_id === userId);
+    return Promise.resolve(
+      profile ? { id: profile.id, verificationStatus: profile.verification_status } : null,
+    );
   }
 
   findApprovedProfileByDuid(duid: string): Promise<LawyerProfileRecord | null> {

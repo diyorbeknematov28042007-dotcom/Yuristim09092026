@@ -1,4 +1,4 @@
-import type { BotUserContext, Language } from '@yuristim/types';
+import type { BotUserContext, Language, UserView } from '@yuristim/types';
 import type { Context } from 'grammy';
 import type { BotRuntimeConfig } from '../config/runtime.js';
 import { t } from '../i18n/index.js';
@@ -11,6 +11,10 @@ import {
 import { mainLawyerKeyboard } from '../keyboards/main-lawyer.keyboard.js';
 import { mainUserKeyboard } from '../keyboards/main-user.keyboard.js';
 import { displayName } from './user-context.service.js';
+
+interface NavigationContext {
+  user: Pick<UserView, 'activeMode' | 'language' | 'onboardingStatus'>;
+}
 
 export async function editOrReply(
   context: Context,
@@ -30,7 +34,7 @@ export async function editOrReply(
 
 export async function showOnboardingStep(
   context: Context,
-  data: BotUserContext,
+  data: NavigationContext,
   config: BotRuntimeConfig,
 ): Promise<void> {
   const language = data.user.language ?? 'uz';
@@ -58,7 +62,7 @@ export async function showOnboardingStep(
   }
 }
 
-export async function showMainMenu(context: Context, data: BotUserContext): Promise<void> {
+export async function showMainMenu(context: Context, data: NavigationContext): Promise<void> {
   const language = data.user.language ?? 'uz';
   const keyboard =
     data.user.activeMode === 'lawyer' ? mainLawyerKeyboard(language) : mainUserKeyboard(language);

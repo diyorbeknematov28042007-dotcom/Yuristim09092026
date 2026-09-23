@@ -49,6 +49,11 @@ const staticCallbacks = [
   'mp:confirm',
   'mp:cancel-draft',
   'mp:dashboard',
+  'ai:new',
+  'ai:history',
+  'ai:back',
+  'ai:mode:fast',
+  'ai:mode:expert',
 ] as const;
 
 export type CallbackData =
@@ -63,7 +68,8 @@ export type CallbackData =
   | `mp:select:${string}:${string}`
   | `mp:cancel:${string}`
   | `mp:review:${string}`
-  | `mp:rate:${string}:${1 | 2 | 3 | 4 | 5}`;
+  | `mp:rate:${string}:${1 | 2 | 3 | 4 | 5}`
+  | `ai:open:aic_${string}`;
 
 const validCallbacks = new Set<string>([
   ...staticCallbacks,
@@ -79,5 +85,6 @@ export function parseCallbackData(value: string): CallbackData | null {
     return value as CallbackData;
   if (/^mp:select:mp_[a-f0-9]{24}:ma_[a-f0-9]{20}$/.test(value)) return value as CallbackData;
   if (/^mp:rate:mp_[a-f0-9]{24}:[1-5]$/.test(value)) return value as CallbackData;
+  if (/^ai:open:aic_[a-f0-9]{24}$/.test(value)) return value as CallbackData;
   return validCallbacks.has(value) ? (value as CallbackData) : null;
 }

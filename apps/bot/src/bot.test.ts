@@ -1,6 +1,10 @@
 import type {
+  AiConversationView,
+  AiMessageView,
+  AiSendResult,
   BotLawyerContext,
   BotOnboardingAction,
+  BotRuntimeContext,
   BotUserContext,
   BotVerificationAction,
   CreditBalanceView,
@@ -13,8 +17,9 @@ import type {
   UserView,
 } from '@yuristim/types';
 import type { Update, UserFromGetMe } from 'grammy/types';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  type BotAiStatusView,
   YuristimApiError,
   type EnsureUserResult,
   type YuristimApi,
@@ -24,6 +29,7 @@ import { t } from './i18n/index.js';
 import { mainLawyerKeyboard } from './keyboards/main-lawyer.keyboard.js';
 import { mainUserKeyboard } from './keyboards/main-user.keyboard.js';
 import { servicesKeyboard } from './keyboards/services.keyboard.js';
+import { telegramChunks, telegramPlainText } from './services/ai.service.js';
 import { displayName } from './services/user-context.service.js';
 
 const botInfo = {
@@ -105,15 +111,72 @@ class FakeApi implements YuristimApi {
       price: 9900,
     },
   ];
+  aiConversations: AiConversationView[] = [
+    {
+      createdAt: '2026-09-17T08:00:00.000Z',
+      id: 'aic_000000000000000000000001',
+      lastMessageAt: null,
+      mode: 'fast',
+      status: 'active',
+      title: 'Yangi chat',
+      updatedAt: '2026-09-17T08:00:00.000Z',
+    },
+  ];
+  aiMessages: AiMessageView[] = [];
+  aiStatus: BotAiStatusView = {
+    activeConversationId: 'aic_000000000000000000000001',
+    availability: { expert: true, fast: true },
+    balance: this.creditBalance,
+    botChatActive: false,
+    mode: 'fast',
+    telegramControlMessageId: null,
+  };
+  aiDeliveryFailures: string[] = [];
+  runtimeContextCalls = 0;
 
   ensureTelegramUser(identity: { telegramUserId: number }): Promise<EnsureUserResult> {
     this.ensuredTelegramIds.push(identity.telegramUserId);
     return Promise.resolve({ created: this.created, user: this.data.user });
   }
 
+  confirmFounding100(): Promise<{ reservationId: string; duplicate: boolean }> {
+    return Promise.resolve({
+      duplicate: false,
+      reservationId: '00000000-0000-4000-8000-000000000099',
+    });
+  }
+
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext> {
     this.requestedTelegramIds.push(telegramUserId);
     return Promise.resolve(this.data);
+  }
+
+  getRuntimeContext(): Promise<BotRuntimeContext> {
+    this.runtimeContextCalls += 1;
+    const verificationStatus =
+      this.lawyer.verification?.status ?? this.lawyer.profile?.verificationStatus ?? null;
+    return Promise.resolve({
+      ai: {
+        activeConversationId: this.aiStatus.activeConversationId,
+        botChatActive: this.aiStatus.botChatActive,
+        mode: this.aiStatus.mode,
+        telegramControlMessageId: this.aiStatus.telegramControlMessageId,
+      },
+      lawyer: {
+        draftStep:
+          this.lawyer.verification?.status === 'draft'
+            ? (this.lawyer.verification.draft.step ?? null)
+            : null,
+        verificationStatus,
+      },
+      marketplace: { draftStep: null },
+      user: {
+        activeMode: this.data.user.activeMode,
+        language: this.data.user.language,
+        onboardingRole: this.data.user.onboardingRole,
+        onboardingStatus: this.data.user.onboardingStatus,
+      },
+    });
   }
 
   updateOnboarding(telegramUserId: number, action: BotOnboardingAction): Promise<BotUserContext> {
@@ -255,6 +318,127 @@ class FakeApi implements YuristimApi {
   getAcceptProducts(): Promise<MarketplaceAcceptProductView[]> {
     return Promise.resolve(this.acceptProducts);
   }
+
+  enterAi(): Promise<{ conversation: AiConversationView; status: BotAiStatusView }> {
+    this.aiStatus = { ...this.aiStatus, botChatActive: true };
+    return Promise.resolve({ conversation: this.aiConversations[0]!, status: this.aiStatus });
+  }
+
+  leaveAi(): Promise<void> {
+    this.aiStatus = { ...this.aiStatus, botChatActive: false };
+    return Promise.resolve();
+  }
+
+  getAiStatus(): Promise<BotAiStatusView> {
+    return Promise.resolve(this.aiStatus);
+  }
+
+  replaceAiController(
+    _telegramUserId: number,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean> {
+    if (this.aiStatus.telegramControlMessageId !== expectedMessageId) return Promise.resolve(false);
+    this.aiStatus = { ...this.aiStatus, telegramControlMessageId: newMessageId };
+    return Promise.resolve(true);
+  }
+
+  getAiConversations(): Promise<AiConversationView[]> {
+    return Promise.resolve(this.aiConversations);
+  }
+
+  createAiConversation(
+    _telegramUserId: number,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView> {
+    const conversation: AiConversationView = {
+      createdAt: '2026-09-17T08:01:00.000Z',
+      id: `aic_${String(this.aiConversations.length + 1).padStart(24, '0')}`,
+      lastMessageAt: null,
+      mode,
+      status: 'active',
+      title: 'Yangi chat',
+      updatedAt: '2026-09-17T08:01:00.000Z',
+    };
+    this.aiConversations.push(conversation);
+    this.aiMessages = [];
+    this.aiStatus = {
+      ...this.aiStatus,
+      activeConversationId: conversation.id,
+      botChatActive: true,
+      mode,
+    };
+    return Promise.resolve(conversation);
+  }
+
+  getAiConversation(
+    _telegramUserId: number,
+    conversationId: string,
+  ): Promise<{ conversation: AiConversationView; messages: AiMessageView[] }> {
+    return Promise.resolve({
+      conversation: this.aiConversations.find((item) => item.id === conversationId)!,
+      messages: this.aiMessages,
+    });
+  }
+
+  resumeAiConversation(
+    _telegramUserId: number,
+    conversationId: string,
+  ): Promise<AiConversationView> {
+    const conversation = this.aiConversations.find((item) => item.id === conversationId)!;
+    this.aiStatus = {
+      ...this.aiStatus,
+      activeConversationId: conversation.id,
+      botChatActive: true,
+      mode: conversation.mode,
+    };
+    return Promise.resolve(conversation);
+  }
+
+  switchAiMode(
+    _telegramUserId: number,
+    conversationId: string,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView> {
+    const conversation = this.aiConversations.find((item) => item.id === conversationId)!;
+    conversation.mode = mode;
+    this.aiStatus = { ...this.aiStatus, mode };
+    return Promise.resolve(conversation);
+  }
+
+  sendAiMessage(
+    _telegramUserId: number,
+    conversationId: string,
+    content: string,
+  ): Promise<AiSendResult> {
+    const conversation = this.aiConversations.find((item) => item.id === conversationId)!;
+    const userMessage: AiMessageView = {
+      chargedCredits: 0,
+      completedAt: '2026-09-17T08:02:00.000Z',
+      content,
+      createdAt: '2026-09-17T08:02:00.000Z',
+      id: 'aim_000000000000000000000001',
+      mode: conversation.mode,
+      role: 'user',
+      sourceStatus: 'none',
+      sources: [],
+      status: 'completed',
+    };
+    const assistantMessage: AiMessageView = {
+      ...userMessage,
+      chargedCredits: 1,
+      content: 'Sinov AI javobi',
+      id: 'aim_000000000000000000000002',
+      role: 'assistant',
+    };
+    this.aiMessages.push(userMessage, assistantMessage);
+    return Promise.resolve({ conversation, duplicate: false, message: assistantMessage });
+  }
+
+  reportAiDeliveryFailure(_telegramUserId: number, messageId: string): Promise<void> {
+    this.aiDeliveryFailures.push(messageId);
+    return Promise.resolve();
+  }
 }
 
 function verification(overrides: Partial<LawyerVerificationView> = {}): LawyerVerificationView {
@@ -299,10 +483,19 @@ interface TelegramCall {
   payload: Record<string, unknown>;
 }
 
-function fixture(api = new FakeApi()) {
+interface FixtureOptions {
+  fastStickerFileId?: string;
+  expertStickerFileId?: string;
+  failStickerSend?: boolean;
+  failDeleteMessage?: boolean;
+}
+
+function fixture(api = new FakeApi(), options: FixtureOptions = {}) {
   const bot = createBot({
     api,
     apiBaseUrl: 'http://localhost:3001',
+    ...(options.fastStickerFileId ? { aiFastStickerFileId: options.fastStickerFileId } : {}),
+    ...(options.expertStickerFileId ? { aiExpertStickerFileId: options.expertStickerFileId } : {}),
     botInfo,
     internalApiSecret: 'test-internal-api-secret-32-characters',
     marketplaceChannelId: -1000000000001,
@@ -314,7 +507,13 @@ function fixture(api = new FakeApi()) {
   const calls: TelegramCall[] = [];
   bot.api.config.use(async (_previous, method, payload) => {
     calls.push({ method, payload: payload as Record<string, unknown> });
-    if (method === 'sendMessage') {
+    if (method === 'sendSticker' && options.failStickerSend) {
+      throw new Error('Sticker send failed');
+    }
+    if (method === 'deleteMessage' && options.failDeleteMessage) {
+      throw new Error('Delete failed');
+    }
+    if (method === 'sendMessage' || method === 'sendSticker') {
       return {
         ok: true,
         result: {
@@ -322,7 +521,19 @@ function fixture(api = new FakeApi()) {
           date: 1_789_000_000,
           from: botInfo,
           message_id: calls.length,
-          text: String((payload as { text?: string }).text ?? ''),
+          ...(method === 'sendMessage'
+            ? { text: String((payload as { text?: string }).text ?? '') }
+            : {
+                sticker: {
+                  file_id: String((payload as { sticker?: string }).sticker ?? 'sticker'),
+                  file_unique_id: 'sticker-unique',
+                  height: 512,
+                  is_animated: false,
+                  is_video: false,
+                  type: 'regular',
+                  width: 512,
+                },
+              }),
         },
       } as never;
     }
@@ -389,6 +600,23 @@ function textUpdate(text: string, updateId: number): Update {
       chat,
       date: 1_789_000_000,
       from: telegramUser,
+      message_id: updateId,
+      text,
+    },
+    update_id: updateId,
+  };
+}
+
+function textUpdateForUser(text: string, updateId: number, telegramUserId: number): Update {
+  return {
+    message: {
+      chat: { first_name: `User ${telegramUserId}`, id: telegramUserId, type: 'private' },
+      date: 1_789_000_000,
+      from: {
+        first_name: `User ${telegramUserId}`,
+        id: telegramUserId,
+        is_bot: false,
+      },
       message_id: updateId,
       text,
     },
@@ -683,7 +911,7 @@ describe('menus and callback security', () => {
 
   it('maps API failure to safe localized UX without exposing technical detail', async () => {
     const api = new FakeApi();
-    api.getTelegramUserContext = () => Promise.reject(new YuristimApiError('API_UNAVAILABLE', 503));
+    api.getRuntimeContext = () => Promise.reject(new YuristimApiError('API_UNAVAILABLE', 503));
     const errorLog = console.error;
     console.error = () => undefined;
     try {
@@ -775,5 +1003,427 @@ describe('lawyer verification', () => {
     await bot.handleUpdate(callbackUpdate('lawyer:mode', 140), botInfo);
     expect(api.data.user.activeMode).toBe('lawyer');
     expect(JSON.stringify(calls)).toContain(t('en', 'marketplace'));
+  });
+});
+
+describe('Yuristim AI Telegram UX', () => {
+  function completedUser(language: 'uz' | 'ru' | 'en'): FakeApi {
+    const api = new FakeApi();
+    api.data.user = user({ language, onboardingRole: 'user', onboardingStatus: 'completed' });
+    return api;
+  }
+
+  function controllerCalls(calls: TelegramCall[]): TelegramCall[] {
+    return calls.filter(
+      (call) =>
+        call.method === 'sendMessage' &&
+        JSON.stringify(call.payload.reply_markup).includes('ai:new'),
+    );
+  }
+
+  it.each(['uz', 'ru', 'en'] as const)('opens the localized AI entry in %s', async (language) => {
+    const api = completedUser(language);
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate(t(language, 'ai'), 200), botInfo);
+    expect(api.aiStatus.botChatActive).toBe(true);
+    expect(texts(calls).join('\n')).toContain(t(language, 'aiTitle'));
+    expect(JSON.stringify(calls)).toContain(t(language, 'aiNewChat'));
+    expect(JSON.stringify(calls)).toContain(t(language, 'aiHistory'));
+    expect(JSON.stringify(calls)).toContain(t(language, 'aiSwitchToExpert'));
+    expect(controllerCalls(calls)).toHaveLength(1);
+    expect(api.aiStatus.telegramControlMessageId).not.toBeNull();
+  });
+
+  it('removes the old controller, uses one Fast sticker, then restores the controller last', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 777 };
+    const { bot, calls } = fixture(api, { fastStickerFileId: 'fast-sticker' });
+    await bot.handleUpdate(textUpdate('Mehnat shartnomasi nima?', 201), botInfo);
+    expect(calls.filter((call) => call.method === 'sendSticker')).toHaveLength(1);
+    expect(calls.find((call) => call.method === 'sendSticker')?.payload.sticker).toBe(
+      'fast-sticker',
+    );
+    expect(
+      calls.some((call) => call.method === 'deleteMessage' && call.payload.message_id === 777),
+    ).toBe(true);
+    expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
+    expect(texts(calls).join('\n')).toContain(`${t('uz', 'aiCreditsCharged')}: 1`);
+    expect(api.aiMessages.map((message) => message.role)).toEqual(['user', 'assistant']);
+    expect(calls.at(-1)?.method).toBe('sendMessage');
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+    const stickerIndex = calls.findIndex((call) => call.method === 'sendSticker');
+    const stickerMessageId = stickerIndex + 1;
+    const stickerDeleteIndex = calls.findIndex(
+      (call) => call.method === 'deleteMessage' && call.payload.message_id === stickerMessageId,
+    );
+    const answerIndex = calls.findIndex(
+      (call) => call.method === 'sendMessage' && String(call.payload.text).includes('Sinov AI'),
+    );
+    expect(stickerDeleteIndex).toBeGreaterThan(stickerIndex);
+    expect(stickerDeleteIndex).toBeLessThan(answerIndex);
+  });
+
+  it('keeps the status sticker until the AI request completes', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    let releaseProvider!: () => void;
+    let providerStarted!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    api.sendAiMessage = async (...args) => {
+      providerStarted();
+      await providerGate;
+      return originalSend(...args);
+    };
+    const { bot, calls } = fixture(api, { fastStickerFileId: 'fast-sticker' });
+    const handling = bot.handleUpdate(textUpdate('Savol', 214), botInfo);
+
+    await started;
+    await vi.waitFor(() => expect(calls.some((call) => call.method === 'sendSticker')).toBe(true));
+    const stickerIndex = calls.findIndex((call) => call.method === 'sendSticker');
+    expect(
+      calls.some(
+        (call) => call.method === 'deleteMessage' && call.payload.message_id === stickerIndex + 1,
+      ),
+    ).toBe(false);
+
+    releaseProvider();
+    await handling;
+    expect(
+      calls.some(
+        (call) => call.method === 'deleteMessage' && call.payload.message_id === stickerIndex + 1,
+      ),
+    ).toBe(true);
+  });
+
+  it('switches mode, opens history, creates an isolated chat, and leaves through Back', async () => {
+    const api = completedUser('en');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 202 };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('ai:mode:expert', 202), botInfo);
+    expect(api.aiStatus.mode).toBe('expert');
+    await bot.handleUpdate(
+      callbackUpdate('ai:history', api.aiStatus.telegramControlMessageId!),
+      botInfo,
+    );
+    expect(texts(calls)).toContain(t('en', 'aiHistoryTitle'));
+    await bot.handleUpdate(callbackUpdate('nav:ai', 204), botInfo);
+    await bot.handleUpdate(
+      callbackUpdate('ai:new', api.aiStatus.telegramControlMessageId!),
+      botInfo,
+    );
+    expect(api.aiConversations).toHaveLength(2);
+    expect(api.aiMessages).toHaveLength(0);
+    await bot.handleUpdate(
+      callbackUpdate('ai:back', api.aiStatus.telegramControlMessageId!),
+      botInfo,
+    );
+    expect(api.aiStatus.botChatActive).toBe(false);
+    expect(texts(calls)).toContain(t('en', 'mainTitle'));
+  });
+
+  it('keeps the controller after the last chunk of a long response', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    api.sendAiMessage = async (...args) => {
+      const result = await originalSend(...args);
+      return { ...result, message: { ...result.message, content: 'uzun '.repeat(2_000) } };
+    };
+    const { bot, calls } = fixture(api, { fastStickerFileId: 'fast-sticker' });
+    await bot.handleUpdate(textUpdate('Batafsil javob bering', 207), botInfo);
+    const answerCalls = calls.filter(
+      (call) => call.method === 'sendMessage' && !call.payload.reply_markup,
+    );
+    expect(answerCalls.length).toBeGreaterThan(1);
+    expect(calls.at(-1)?.method).toBe('sendMessage');
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+  });
+
+  it('cleans the Expert sticker and restores the controller after provider failure', async () => {
+    const api = completedUser('ru');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, mode: 'expert' };
+    api.sendAiMessage = () => Promise.reject(new YuristimApiError('AI_PROVIDER_UNAVAILABLE', 503));
+    const { bot, calls } = fixture(api, { expertStickerFileId: 'expert-sticker' });
+    await bot.handleUpdate(textUpdate('Сложный вопрос', 208), botInfo);
+    expect(calls.filter((call) => call.method === 'sendSticker')).toHaveLength(1);
+    expect(calls.some((call) => call.method === 'deleteMessage')).toBe(true);
+    expect(texts(calls)).toContain(t('ru', 'aiProviderUnavailable'));
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+    expect(api.aiMessages).toHaveLength(0);
+  });
+
+  it('uses a temporary emoji indicator when sticker config is missing or sending fails', async () => {
+    const missing = completedUser('en');
+    missing.aiStatus = { ...missing.aiStatus, botChatActive: true };
+    const first = fixture(missing);
+    await first.bot.handleUpdate(textUpdate('Question', 209), botInfo);
+    expect(texts(first.calls)).toContain('✨');
+    expect(first.calls.some((call) => call.method === 'deleteMessage')).toBe(true);
+
+    const failed = completedUser('en');
+    failed.aiStatus = { ...failed.aiStatus, botChatActive: true };
+    const second = fixture(failed, { failStickerSend: true, fastStickerFileId: 'bad-sticker' });
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      await second.bot.handleUpdate(textUpdate('Question', 210), botInfo);
+    } finally {
+      console.warn = warn;
+    }
+    expect(texts(second.calls)).toContain('✨');
+    expect(second.calls.some((call) => call.method === 'deleteMessage')).toBe(true);
+    expect(texts(second.calls).join('\n')).toContain('Sinov AI javobi');
+  });
+
+  it('removes Markdown bold delimiters from Telegram AI answers', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    api.sendAiMessage = async (...args) => {
+      const result = await originalSend(...args);
+      return {
+        ...result,
+        message: { ...result.message, content: '**Muhim:** bu **oddiy** javob.' },
+      };
+    };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate('Savol', 213), botInfo);
+    const output = texts(calls).join('\n');
+    expect(output).toContain('Muhim: bu oddiy javob.');
+    expect(output).not.toContain('**');
+  });
+
+  it('keeps AI delivery and charging intact when Telegram cleanup fails', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 700 };
+    const { bot, calls } = fixture(api, {
+      failDeleteMessage: true,
+      fastStickerFileId: 'fast-sticker',
+    });
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      await bot.handleUpdate(textUpdate('Savol', 212), botInfo);
+    } finally {
+      console.warn = warn;
+    }
+    expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
+    expect(api.aiMessages.find((message) => message.role === 'assistant')?.chargedCredits).toBe(1);
+    expect(api.aiDeliveryFailures).toHaveLength(0);
+    expect(calls.some((call) => call.method === 'editMessageReplyMarkup')).toBe(true);
+    expect(calls.filter((call) => call.method === 'deleteMessage').length).toBeGreaterThan(1);
+  });
+
+  it('ignores a stale controller callback without changing the conversation mode', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 500 };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(callbackUpdate('ai:mode:expert', 499), botInfo);
+    expect(api.aiStatus.mode).toBe('fast');
+    expect(JSON.stringify(calls)).toContain(t('uz', 'aiControllerExpired'));
+  });
+
+  it('reconciles a persisted controller after a bot restart without duplicates', async () => {
+    const api = completedUser('uz');
+    api.aiStatus = { ...api.aiStatus, telegramControlMessageId: 880 };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate(t('uz', 'ai'), 211), botInfo);
+    expect(
+      calls.some((call) => call.method === 'deleteMessage' && call.payload.message_id === 880),
+    ).toBe(true);
+    expect(controllerCalls(calls)).toHaveLength(1);
+    expect(api.aiStatus.telegramControlMessageId).not.toBe(880);
+  });
+
+  it('redirects Telegram documents to Mini App/Web without uploading for AI analysis', async () => {
+    const api = completedUser('ru');
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(documentUpdate(206, 'application/pdf', 'contract.pdf'), botInfo);
+    expect(texts(calls)).toContain(t('ru', 'aiFileWebOnly'));
+    expect(api.uploads).toHaveLength(0);
+    expect(calls.some((call) => call.method === 'sendSticker')).toBe(false);
+    expect(JSON.stringify(calls.at(-1)?.payload.reply_markup)).toContain('ai:new');
+  });
+
+  it('chunks long plain text without truncating content or exceeding Telegram safety limit', () => {
+    const value = Array.from({ length: 1_500 }, (_, index) => `band-${index}`).join(' ');
+    const chunks = telegramChunks(value);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 3_800)).toBe(true);
+    expect(chunks.join(' ')).toBe(value);
+  });
+
+  it('normalizes bold Markdown delimiters for Telegram plain text rendering', () => {
+    expect(telegramPlainText('**Muhim:** **javob**')).toBe('Muhim: javob');
+  });
+});
+
+describe('Phase 7 latency safeguards', () => {
+  function completedApi(): FakeApi {
+    const api = new FakeApi();
+    api.data.user = user({
+      language: 'uz',
+      onboardingRole: 'user',
+      onboardingStatus: 'completed',
+    });
+    return api;
+  }
+
+  it('acknowledges a callback before a slow API context dependency', async () => {
+    const api = completedApi();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.getTelegramUserContext = async () => {
+      await gate;
+      return api.data;
+    };
+    const { bot, calls } = fixture(api);
+    const handling = bot.handleUpdate(callbackUpdate('nav:settings', 600), botInfo);
+
+    await vi.waitFor(() => {
+      expect(calls[0]?.method).toBe('answerCallbackQuery');
+    });
+    expect(calls.some((call) => call.method === 'editMessageText')).toBe(false);
+    release();
+    await handling;
+    expect(texts(calls)).toContain(t('uz', 'settingsTitle'));
+  });
+
+  it('dispatches an active AI prompt without legacy context, lawyer, or pre-provider status reads', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const legacyContext = vi.spyOn(api, 'getTelegramUserContext');
+    const lawyerContext = vi.spyOn(api, 'getLawyerContext');
+    const originalSend = api.sendAiMessage.bind(api);
+    let providerStarted = false;
+    api.sendAiMessage = async (...args) => {
+      providerStarted = true;
+      return originalSend(...args);
+    };
+    const aiStatus = vi.spyOn(api, 'getAiStatus').mockImplementation(() => {
+      expect(providerStarted).toBe(true);
+      return Promise.resolve(api.aiStatus);
+    });
+
+    const { bot, calls } = fixture(api);
+    await bot.handleUpdate(textUpdate('Faol chat savoli', 601), botInfo);
+
+    expect(api.runtimeContextCalls).toBe(1);
+    expect(legacyContext).not.toHaveBeenCalled();
+    expect(lawyerContext).not.toHaveBeenCalled();
+    expect(aiStatus).toHaveBeenCalled();
+    expect(texts(calls).join('\n')).toContain('Sinov AI javobi');
+  });
+
+  it('does not let user A long AI work block user B navigation', async () => {
+    const api = completedApi();
+    const baseRuntime = api.getRuntimeContext.bind(api);
+    api.getRuntimeContext = async (telegramUserId) => {
+      const runtime = await baseRuntime();
+      return {
+        ...runtime,
+        ai: {
+          ...runtime.ai,
+          botChatActive: telegramUserId === telegramUser.id,
+        },
+      };
+    };
+    const originalSend = api.sendAiMessage.bind(api);
+    let release!: () => void;
+    let started!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const providerGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.sendAiMessage = async (...args) => {
+      started();
+      await providerGate;
+      return originalSend(...args);
+    };
+    const { bot, calls } = fixture(api);
+    const userA = bot.handleUpdate(
+      textUpdateForUser('Uzoq AI savoli', 602, telegramUser.id),
+      botInfo,
+    );
+    await providerStarted;
+    const userB = bot.handleUpdate(textUpdateForUser('unknown', 603, 987_654_321), botInfo);
+
+    await userB;
+    expect(texts(calls)).toContain(t('uz', 'unknownMessage'));
+    release();
+    await userA;
+  });
+
+  it('keeps conflicting updates from the same user ordered without duplicate execution', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    const originalSend = api.sendAiMessage.bind(api);
+    let release!: () => void;
+    let firstStarted!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    let calls = 0;
+    let active = 0;
+    let maxActive = 0;
+    api.sendAiMessage = async (...args) => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      if (calls === 1) {
+        firstStarted();
+        await firstGate;
+      }
+      const result = await originalSend(...args);
+      active -= 1;
+      return result;
+    };
+    const { bot } = fixture(api);
+    const first = bot.handleUpdate(textUpdate('Birinchi savol', 604), botInfo);
+    await started;
+    const second = bot.handleUpdate(textUpdate('Ikkinchi savol', 605), botInfo);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toBe(2);
+    expect(maxActive).toBe(1);
+    expect(api.aiMessages.filter((message) => message.role === 'assistant')).toHaveLength(2);
+  });
+
+  it('starts AI execution while controller cleanup is still pending', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true, telegramControlMessageId: 700 };
+    let release!: () => void;
+    const cleanupGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalReplace = api.replaceAiController.bind(api);
+    api.replaceAiController = async (...args) => {
+      if (args[1] === 700) await cleanupGate;
+      return originalReplace(...args);
+    };
+    const send = vi.spyOn(api, 'sendAiMessage');
+    const { bot } = fixture(api);
+    const handling = bot.handleUpdate(textUpdate('Savol', 606), botInfo);
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    release();
+    await handling;
   });
 });

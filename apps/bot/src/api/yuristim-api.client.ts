@@ -4,8 +4,13 @@ import {
   USER_MODES,
   USER_ROLES,
   type ApiErrorCode,
+  type AiConversationView,
+  type AiMessageView,
+  type AiSendResult,
+  type AiStatusView,
   type BotLawyerContext,
   type BotOnboardingAction,
+  type BotRuntimeContext,
   type BotUserContext,
   type BotVerificationAction,
   type CreditBalanceView,
@@ -20,6 +25,7 @@ import {
   type UserView,
 } from '@yuristim/types';
 import { z } from 'zod';
+import { recordBotPerformance } from '../observability/performance.js';
 
 export interface TelegramIdentity {
   telegramFirstName: string | null;
@@ -32,8 +38,17 @@ export interface EnsureUserResult {
   user: UserView;
 }
 
+export interface BotAiStatusView extends AiStatusView {
+  telegramControlMessageId: number | null;
+}
+
 export interface YuristimApi {
   ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult>;
+  confirmFounding100(
+    telegramUserId: number,
+    token: string,
+  ): Promise<{ reservationId: string; duplicate: boolean }>;
+  getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext>;
   getTelegramUserContext(telegramUserId: number): Promise<BotUserContext>;
   updateOnboarding(telegramUserId: number, action: BotOnboardingAction): Promise<BotUserContext>;
   getLawyerContext(telegramUserId: number): Promise<BotLawyerContext>;
@@ -94,6 +109,39 @@ export interface YuristimApi {
   ): Promise<{ accepted: number; closed: number; items: MarketplacePostView[]; selected: number }>;
   recordMarketplaceChannelMessage(postId: string, messageId: number): Promise<void>;
   recordMarketplaceChannelFailure(postId: string): Promise<void>;
+  enterAi(telegramUserId: number): Promise<{
+    conversation: AiConversationView;
+    status: BotAiStatusView;
+  }>;
+  leaveAi(telegramUserId: number): Promise<void>;
+  getAiStatus(telegramUserId: number): Promise<BotAiStatusView>;
+  replaceAiController(
+    telegramUserId: number,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean>;
+  getAiConversations(telegramUserId: number): Promise<AiConversationView[]>;
+  createAiConversation(
+    telegramUserId: number,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView>;
+  getAiConversation(
+    telegramUserId: number,
+    conversationId: string,
+  ): Promise<{ conversation: AiConversationView; messages: AiMessageView[] }>;
+  resumeAiConversation(telegramUserId: number, conversationId: string): Promise<AiConversationView>;
+  switchAiMode(
+    telegramUserId: number,
+    conversationId: string,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView>;
+  sendAiMessage(
+    telegramUserId: number,
+    conversationId: string,
+    content: string,
+    idempotencyKey: string,
+  ): Promise<AiSendResult>;
+  reportAiDeliveryFailure(telegramUserId: number, messageId: string): Promise<void>;
 }
 
 export class YuristimApiError extends Error {
@@ -131,7 +179,59 @@ const userSchema = z.object({
   updatedAt: z.string(),
 });
 const ensureSchema = z.object({ created: z.boolean(), user: userSchema });
+const founding100ConfirmSchema = z.object({
+  duplicate: z.boolean(),
+  reservationId: z.string().uuid(),
+});
 const contextSchema = z.object({ hasPin: z.boolean(), user: userSchema });
+const runtimeContextSchema = z.object({
+  ai: z.object({
+    activeConversationId: z
+      .string()
+      .regex(/^aic_[a-f0-9]{24}$/)
+      .nullable(),
+    botChatActive: z.boolean(),
+    mode: z.enum(['fast', 'expert']),
+    telegramControlMessageId: z.number().int().positive().safe().nullable(),
+  }),
+  lawyer: z.object({
+    draftStep: z
+      .enum([
+        'full_name',
+        'region',
+        'specializations',
+        'experience',
+        'bio',
+        'price',
+        'profile_image',
+        'verification_document',
+        'summary',
+      ])
+      .nullable(),
+    verificationStatus: z
+      .enum([
+        'unverified',
+        'draft',
+        'submitted',
+        'pending_review',
+        'approved',
+        'rejected',
+        'resubmitted',
+      ])
+      .nullable(),
+  }),
+  marketplace: z.object({
+    draftStep: z
+      .enum(['specialization', 'description', 'region', 'additional_details', 'preview'])
+      .nullable(),
+  }),
+  user: z.object({
+    activeMode: z.enum(USER_MODES),
+    language: z.enum(LANGUAGES).nullable(),
+    onboardingRole: z.enum(USER_ROLES).nullable(),
+    onboardingStatus: z.enum(onboardingStatuses),
+  }),
+});
 const errorSchema = z.object({ error: z.object({ code: z.string() }) });
 const specializationSchema = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const verificationSchema = z.object({
@@ -295,6 +395,53 @@ const marketplaceAcceptanceSchema = z.object({
   }),
   status: z.enum(['accepted', 'selected', 'not_selected', 'cancelled']),
 });
+const aiConversationSchema = z.object({
+  createdAt: z.string(),
+  id: z.string().regex(/^aic_[a-f0-9]{24}$/),
+  lastMessageAt: z.string().nullable(),
+  mode: z.enum(['fast', 'expert']),
+  status: z.enum(['active', 'archived']),
+  title: z.string(),
+  updatedAt: z.string(),
+});
+const aiSourceSchema = z.object({
+  citationOrder: z.number().int(),
+  domain: z.string().nullable(),
+  official: z.boolean(),
+  publisher: z.string().nullable(),
+  sourceType: z.enum(['official_legal', 'official_government', 'court', 'secondary', 'other']),
+  title: z.string(),
+  url: z.string().url(),
+  verified: z.boolean(),
+});
+const aiMessageSchema = z.object({
+  chargedCredits: z.number(),
+  completedAt: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+  id: z.string().regex(/^aim_[a-f0-9]{24}$/),
+  mode: z.enum(['fast', 'expert']),
+  role: z.enum(['user', 'assistant']),
+  sourceStatus: z.enum(['none', 'available', 'unverified']),
+  sources: z.array(aiSourceSchema),
+  status: z.enum(['pending', 'running', 'streaming', 'completed', 'failed', 'cancelled']),
+});
+const aiStatusSchema = z.object({
+  activeConversationId: z
+    .string()
+    .regex(/^aic_[a-f0-9]{24}$/)
+    .nullable(),
+  availability: z.object({ expert: z.boolean(), fast: z.boolean() }),
+  balance: creditBalanceSchema,
+  botChatActive: z.boolean(),
+  mode: z.enum(['fast', 'expert']),
+  telegramControlMessageId: z.number().int().positive().safe().nullable(),
+});
+const aiSendSchema = z.object({
+  conversation: aiConversationSchema,
+  duplicate: z.boolean(),
+  message: aiMessageSchema,
+});
 
 interface ClientOptions {
   baseUrl: string;
@@ -303,6 +450,8 @@ interface ClientOptions {
   now?: () => number;
   requestId?: () => string;
   timeoutMilliseconds?: number;
+  aiTimeoutMilliseconds?: number;
+  correlationId?: () => string | undefined;
 }
 
 export function createInternalSignature(
@@ -323,6 +472,7 @@ export class YuristimApiClient implements YuristimApi {
   private readonly now: () => number;
   private readonly requestId: () => string;
   private readonly timeoutMilliseconds: number;
+  private readonly aiTimeoutMilliseconds: number;
 
   constructor(private readonly options: ClientOptions) {
     this.baseUrl = new URL(options.baseUrl);
@@ -330,11 +480,32 @@ export class YuristimApiClient implements YuristimApi {
     this.now = options.now ?? Date.now;
     this.requestId = options.requestId ?? randomUUID;
     this.timeoutMilliseconds = options.timeoutMilliseconds ?? 5_000;
+    this.aiTimeoutMilliseconds = options.aiTimeoutMilliseconds ?? 60_000;
   }
 
   async ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult> {
     const payload = await this.request('POST', '/internal/telegram/users/ensure', identity);
     return this.parse(ensureSchema, payload);
+  }
+
+  async confirmFounding100(
+    telegramUserId: number,
+    token: string,
+  ): Promise<{ reservationId: string; duplicate: boolean }> {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/founding100/confirm`,
+      { token },
+    );
+    return this.parse(founding100ConfirmSchema, payload);
+  }
+
+  async getRuntimeContext(telegramUserId: number): Promise<BotRuntimeContext> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/runtime-context`,
+    );
+    return this.parse(runtimeContextSchema, payload);
   }
 
   async getTelegramUserContext(telegramUserId: number): Promise<BotUserContext> {
@@ -585,23 +756,150 @@ export class YuristimApiClient implements YuristimApi {
     );
   }
 
+  async enterAi(telegramUserId: number) {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/ai/enter`,
+      {},
+    );
+    return this.parse(
+      z.object({ conversation: aiConversationSchema, status: aiStatusSchema }),
+      payload,
+    );
+  }
+
+  async leaveAi(telegramUserId: number): Promise<void> {
+    await this.request('POST', `/internal/telegram/users/${telegramUserId}/ai/leave`, {});
+  }
+
+  async getAiStatus(telegramUserId: number): Promise<BotAiStatusView> {
+    return this.parse(
+      aiStatusSchema,
+      await this.request('GET', `/internal/telegram/users/${telegramUserId}/ai/status`),
+    );
+  }
+
+  async replaceAiController(
+    telegramUserId: number,
+    expectedMessageId: number | null,
+    newMessageId: number | null,
+  ): Promise<boolean> {
+    const payload = await this.request(
+      'PATCH',
+      `/internal/telegram/users/${telegramUserId}/ai/controller`,
+      { expectedMessageId, newMessageId },
+    );
+    return this.parse(z.object({ replaced: z.boolean() }), payload).replaced;
+  }
+
+  async getAiConversations(telegramUserId: number): Promise<AiConversationView[]> {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/ai/conversations`,
+    );
+    return this.parse(z.object({ items: z.array(aiConversationSchema) }), payload).items;
+  }
+
+  async createAiConversation(
+    telegramUserId: number,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView> {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/ai/conversations`,
+      { mode },
+    );
+    return this.parse(z.object({ conversation: aiConversationSchema }), payload).conversation;
+  }
+
+  async getAiConversation(telegramUserId: number, conversationId: string) {
+    const payload = await this.request(
+      'GET',
+      `/internal/telegram/users/${telegramUserId}/ai/conversations/${conversationId}`,
+    );
+    return this.parse(
+      z.object({ conversation: aiConversationSchema, messages: z.array(aiMessageSchema) }),
+      payload,
+    );
+  }
+
+  async resumeAiConversation(
+    telegramUserId: number,
+    conversationId: string,
+  ): Promise<AiConversationView> {
+    const payload = await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/ai/conversations/${conversationId}/resume`,
+      {},
+    );
+    return this.parse(z.object({ conversation: aiConversationSchema }), payload).conversation;
+  }
+
+  async switchAiMode(
+    telegramUserId: number,
+    conversationId: string,
+    mode: 'fast' | 'expert',
+  ): Promise<AiConversationView> {
+    const payload = await this.request(
+      'PATCH',
+      `/internal/telegram/users/${telegramUserId}/ai/conversations/${conversationId}/mode`,
+      { mode },
+    );
+    return this.parse(z.object({ conversation: aiConversationSchema }), payload).conversation;
+  }
+
+  async sendAiMessage(
+    telegramUserId: number,
+    conversationId: string,
+    content: string,
+    idempotencyKey: string,
+  ): Promise<AiSendResult> {
+    return this.parse(
+      aiSendSchema,
+      await this.request(
+        'POST',
+        `/internal/telegram/users/${telegramUserId}/ai/conversations/${conversationId}/messages`,
+        { content, idempotencyKey },
+        this.aiTimeoutMilliseconds,
+      ),
+    );
+  }
+
+  async reportAiDeliveryFailure(telegramUserId: number, messageId: string): Promise<void> {
+    await this.request(
+      'POST',
+      `/internal/telegram/users/${telegramUserId}/ai/messages/${messageId}/delivery-failure`,
+      {},
+    );
+  }
+
   private parse<T>(schema: z.ZodType<T>, payload: unknown): T {
     const parsed = schema.safeParse(payload);
     if (!parsed.success) throw new YuristimApiError('MALFORMED_RESPONSE', 502);
     return parsed.data;
   }
 
-  private async request(method: 'GET' | 'PATCH' | 'POST', path: string, body?: unknown) {
+  private async request(
+    method: 'GET' | 'PATCH' | 'POST',
+    path: string,
+    body?: unknown,
+    timeoutMilliseconds = this.timeoutMilliseconds,
+  ) {
+    const startedAt = Date.now();
     const timestamp = String(Math.floor(this.now() / 1_000));
     const serializedBody = body === undefined ? undefined : JSON.stringify(body);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMilliseconds);
+    const timer = setTimeout(() => controller.abort(), timeoutMilliseconds);
+    let statusCode: number | undefined;
+    let success = false;
 
     try {
+      const correlationId = this.options.correlationId?.();
       const response = await this.fetchImplementation(new URL(path, this.baseUrl), {
         ...(serializedBody === undefined ? {} : { body: serializedBody }),
         headers: {
           ...(serializedBody ? { 'content-type': 'application/json' } : {}),
+          ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
           'x-request-id': this.requestId(),
           'x-yuristim-signature': createInternalSignature(
             method,
@@ -615,6 +913,7 @@ export class YuristimApiClient implements YuristimApi {
         method,
         signal: controller.signal,
       });
+      statusCode = response.status;
       const payload: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const parsedError = errorSchema.safeParse(payload);
@@ -623,12 +922,29 @@ export class YuristimApiClient implements YuristimApi {
           : 'API_UNAVAILABLE';
         throw new YuristimApiError(code, response.status);
       }
+      success = true;
       return payload;
     } catch (error) {
       if (error instanceof YuristimApiError) throw error;
       throw new YuristimApiError('API_UNAVAILABLE', 503);
     } finally {
       clearTimeout(timer);
+      recordBotPerformance('bot_to_api', {
+        durationMilliseconds: Date.now() - startedAt,
+        method,
+        route: sanitizeRoute(path),
+        ...(statusCode === undefined ? {} : { statusCode }),
+        success,
+      });
     }
   }
+}
+
+function sanitizeRoute(path: string): string {
+  return path
+    .replace(/\/users\/[^/?]+/g, '/users/:telegramUserId')
+    .replace(/\/aic_[a-f0-9]{24}/g, '/:conversationId')
+    .replace(/\/aim_[a-f0-9]{24}/g, '/:messageId')
+    .replace(/\/mp_[a-f0-9]{24}/g, '/:listingId')
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/:id');
 }

@@ -13,6 +13,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "@grammyjs/runner": "2.0.3",
     "@yuristim/config": "workspace:*",
     "@yuristim/types": "workspace:*",
     "grammy": "1.46.0",

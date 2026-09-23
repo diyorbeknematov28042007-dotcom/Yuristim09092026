@@ -12,6 +12,10 @@ const optionalUsername = z.preprocess(
     .regex(/^[A-Za-z0-9_]{5,32}$/)
     .optional(),
 );
+const optionalTelegramFileId = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().trim().min(1).max(512).optional(),
+);
 
 const botEnvSchema = z.object({
   NODE_ENV: nodeEnvSchema,
@@ -24,8 +28,13 @@ const botEnvSchema = z.object({
   PUBLIC_OFFER_URL: optionalUrl,
   PRIVACY_URL: optionalUrl,
   SUPPORT_USERNAME: optionalUsername,
+  MINI_APP_URL: optionalUrl,
   TERMS_VERSION: z.string().min(1).max(64).default('2026-09'),
   API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(500).max(30_000).default(5_000),
+  AI_API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
+  TELEGRAM_AI_FAST_STICKER_FILE_ID: optionalTelegramFileId,
+  TELEGRAM_AI_EXPERT_STICKER_FILE_ID: optionalTelegramFileId,
+  TELEGRAM_AI_DOCUMENT_STICKER_FILE_ID: optionalTelegramFileId,
 });
 
 export type BotEnv = z.infer<typeof botEnvSchema>;
