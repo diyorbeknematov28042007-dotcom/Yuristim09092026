@@ -11,10 +11,7 @@ const frontendEventSchema = z.enum([
   'telegram_opened',
 ]);
 
-export function registerFounding100Routes(
-  app: FastifyInstance,
-  service: Founding100Service,
-): void {
+export function registerFounding100Routes(app: FastifyInstance, service: Founding100Service): void {
   app.get('/founding100/status', async () => service.status());
 
   app.post('/founding100/reservations', async (request, reply) => {
