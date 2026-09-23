@@ -18,6 +18,9 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.116.0"
   }
 }

@@ -5,34 +5,36 @@
 ```bash
 nvm use
 corepack enable
-pnpm install
+pnpm install --frozen-lockfile
 cp .env.example .env
 ```
 
-Real key va tokenlarni faqat local `.env` yoki hosting environmentida saqlang.
+Real key va tokenlar faqat local `.env` yoki deployment environmentida saqlanadi.
 
 ## Environment
 
-### API
+### API (server-only)
 
-- `NODE_ENV`: `development`, `test` yoki `production`
-- `PORT`: default `3001`
-- `HOST`: default `0.0.0.0`
-- `LOG_LEVEL`: structured log darajasi
-- Supabase qiymatlari Phase 1'da optional va ishlatilmaydi
+- `NODE_ENV`, `PORT`, `HOST`, `LOG_LEVEL`
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- `SESSION_SECRET` — kamida 32 belgili HMAC secret
+- `INTERNAL_BOT_API_SECRET` — kamida 32 belgili Bot/API shared secret
+- `SESSION_TTL_SECONDS` — default 30 kun
+- `LOGIN_CHALLENGE_TTL_SECONDS` — default 10 daqiqa
 
-### Bot
+### Bot (server-only)
 
-- `TELEGRAM_BOT_TOKEN`: majburiy server secret
-- `API_BASE_URL`: default `http://localhost:3001`
+- `TELEGRAM_BOT_TOKEN`
+- `API_BASE_URL`
+- `INTERNAL_BOT_API_SECRET`
 
-### Web
+### Web (public)
 
-- `NEXT_PUBLIC_API_URL`: default `http://localhost:3001`
-- `NEXT_PUBLIC_SUPABASE_URL`: Phase 2 uchun optional public URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Phase 2 uchun optional publishable key
+- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Web kodiga server-only variable import qilish taqiqlanadi.
+Web kodiga service role yoki boshqa server-only variable import qilish taqiqlanadi.
 
 ## Commandlar
 
@@ -46,13 +48,32 @@ pnpm format
 pnpm format:check
 ```
 
-Workspace filtrlash:
+Workspace misollari:
 
 ```bash
 pnpm --filter @yuristim/api test
 pnpm --filter @yuristim/web build
 pnpm --filter @yuristim/bot typecheck
 ```
+
+## Database workflow
+
+Yangi migration faqat Supabase CLI bilan yaratiladi:
+
+```bash
+supabase migration new descriptive_name
+```
+
+Local database'ni qayta qurish va pgTAP testlarni ishga tushirish:
+
+```bash
+supabase db reset
+supabase test db
+```
+
+Migrationni edit qilgandan keyin database types qayta generatsiya qilinadi. Remote
+projectga migration Git'dagi ayni SQL bilan qo‘llanadi. Production yoki shared
+projectga `db reset` ishlatilmaydi.
 
 ## Branching
 
@@ -61,33 +82,16 @@ pnpm --filter @yuristim/bot typecheck
 - Fix: `fix/short-name`
 - Docs: `docs/short-name`
 
-`main`ga to‘g‘ridan-to‘g‘ri force push yoki history rewrite qilinmaydi.
-
-Commitlar Conventional Commits formatida:
-
-```text
-chore: initialize yuristim monorepo
-feat(api): add fastify application foundation
-feat(bot): add grammy bot foundation
-feat(web): add nextjs application foundation
-ci: add validation workflow
-docs: add development setup
-```
+Phase 2 branchi Phase 1 PR merge qilinmaganligi sababli
+`phase/01-foundation`dan ajratilgan. Commitlar Conventional Commits formatida;
+history rewrite va force push taqiqlanadi.
 
 ## Testing
 
-- API: Fastify `inject` orqali health/readiness integration test.
-- Bot: network/pollingni boshlamasdan module creation test.
-- Shared config: typed env validation va secret-redaction test.
+- API: Fastify `inject` bilan auth/user/internal endpoint integration testlari.
+- Auth service: DUID collision, PIN lock, challenge consume va session lifecycle.
+- Database: repository contract unit testlari va `supabase/tests/database` pgTAP.
+- Bot: polling boshlamasdan module import va API adapter typecheck.
 - Web: strict typecheck va production build.
 
-Testlar real Telegram, Supabase yoki AI secretini talab qilmasligi kerak.
-
-## Yangi modul qo‘shish qoidasi
-
-1. Modul egasini tanlang: Web, API, Bot yoki shared package.
-2. App'lararo internal import yaratmang.
-3. Business logic'ni transport handler ichiga joylamang.
-4. Environment qiymatini typed schema orqali o‘qing.
-5. Minimal test va documentation qo‘shing.
-6. Keyingi faza feature'ini oldindan implementatsiya qilmang.
+Automated testlar real Telegram yoki production secret talab qilmasligi kerak.

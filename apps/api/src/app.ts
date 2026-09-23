@@ -1,14 +1,24 @@
 import { randomUUID } from 'node:crypto';
+import cookie from '@fastify/cookie';
 import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
   type RawServerDefault,
 } from 'fastify';
 import { registerErrorHandler } from './lib/errors.js';
+import { registerAuthRoutes } from './modules/auth/routes.js';
+import type { CoreAuthService } from './modules/auth/service.js';
+import { registerInternalRoutes } from './modules/internal/routes.js';
+import { registerUserRoutes } from './modules/users/routes.js';
 import { registerRequestContext } from './plugins/request-context.js';
 import { healthRoutes } from './routes/health.js';
 
 export interface BuildAppOptions {
+  core?: {
+    internalBotSecret: string;
+    production: boolean;
+    service: CoreAuthService;
+  };
   logger?: FastifyServerOptions<RawServerDefault>['logger'];
 }
 
@@ -28,6 +38,19 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerErrorHandler(app);
 
   app.register(healthRoutes);
+
+  if (options.core) {
+    const core = options.core;
+    app.register(async (coreApp) => {
+      await coreApp.register(cookie);
+      registerAuthRoutes(coreApp, {
+        production: core.production,
+        service: core.service,
+      });
+      registerUserRoutes(coreApp, core.service);
+      registerInternalRoutes(coreApp, core.service, core.internalBotSecret);
+    });
+  }
 
   return app;
 }
