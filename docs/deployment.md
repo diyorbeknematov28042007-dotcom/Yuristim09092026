@@ -27,6 +27,8 @@ LOGIN_CHALLENGE_TTL_SECONDS
 ADMIN_SESSION_TTL_SECONDS
 ADMIN_BOOTSTRAP_USERNAME (optional)
 ADMIN_BOOTSTRAP_PASSWORD (optional)
+PAYMENT_WEBHOOK_SECRET
+WEEKLY_CREDIT_JOB_INTERVAL_SECONDS
 ```
 
 Bot environment names:
@@ -48,10 +50,10 @@ API_TIMEOUT_MILLISECONDS
 services. `API_BASE_URL` points to the deployed API URL. Secret values belong only
 in Railway environment settings and must not be committed or printed.
 
-At the time Phase 4 was prepared, connected Railway project creation was blocked by
-an expired trial requiring plan selection. No paid resource or production traffic
-was created automatically. The checked-in service configuration remains ready for a
-staging deployment once billing access is restored.
+`PAYMENT_WEBHOOK_SECRET` belongs only to the API service. The default weekly scheduler
+interval is 3600 seconds; it executes once at startup and then periodically. Weekly
+grant uniqueness is enforced in PostgreSQL, so restarts or multiple API instances do
+not create duplicate grants.
 
 ## Supabase
 
@@ -73,3 +75,5 @@ attach or redirect a production domain during Phase 4.
 4. Submit a test verification, approve it through the admin API, switch to lawyer
    mode and load the public DUID route.
 5. Remove isolated test records if the environment is retained.
+6. Confirm balance/history, an admin bonus, sandbox checkout, a signed paid webhook,
+   and a duplicate webhook that does not grant value twice.

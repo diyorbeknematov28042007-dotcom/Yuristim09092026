@@ -20,6 +20,11 @@ aniq Yuristim projectda bajarildi.
 - `auth_sessions`: hashed server session, expiry/revoke/last-seen.
 - `auth_login_requests`: hashed one-time Telegram challenge state machine.
 - `user_tags`: faqat server boshqaradigan metadata taglari.
+- `credit_transactions`: immutable credit source-of-truth ledger.
+- `credit_products`: narxi tasdiqlanmaguncha inactive credit catalog.
+- `marketplace_accept_transactions`: yurist accept birliklarining immutable ledgeri.
+- `marketplace_accept_products`: active single-accept va kelajak paketlar katalogi.
+- `payments`: provider-neutral checkout va terminal webhook holatlari.
 
 `users.telegram_user_id`, `users.duid`, session token hash va challenge hash unique.
 Session user/expiry hamda login status/expiry uchun indexlar mavjud. `updated_at`
@@ -33,7 +38,7 @@ terms va lawyer uchun full name mavjudligini talab qiladi. Mavjud data reset qil
 ## Access model
 
 Barcha core business tablelarda RLS yoqilgan va forced. Client role'lari uchun
-policy yo‘q, `anon`/`authenticated` table privilege'lari revoke qilingan. Faqat
+explicit deny policy mavjud, `anon`/`authenticated` table privilege'lari revoke qilingan. Faqat
 server-side API service-role client orqali `packages/db` repository bilan query
 qiladi. Web va Bot database'ga bevosita business query yubormaydi.
 

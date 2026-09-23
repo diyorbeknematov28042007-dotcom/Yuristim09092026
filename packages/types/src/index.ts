@@ -75,6 +75,15 @@ export type ApiErrorCode =
   | 'VERIFICATION_REJECT_REASON_REQUIRED'
   | 'INVALID_SPECIALIZATION'
   | 'INVALID_VERIFICATION_FILE'
+  | 'INSUFFICIENT_CREDITS'
+  | 'INVALID_CREDIT_PRODUCT'
+  | 'CREDIT_PRODUCT_INACTIVE'
+  | 'INVALID_ACCEPT_PRODUCT'
+  | 'ACCEPT_PRODUCT_INACTIVE'
+  | 'PAYMENT_NOT_FOUND'
+  | 'PAYMENT_ALREADY_PROCESSED'
+  | 'PAYMENT_VERIFICATION_FAILED'
+  | 'INVALID_PAYMENT_STATE'
   | 'NOT_FOUND'
   | 'INTERNAL_ERROR';
 
@@ -192,4 +201,95 @@ export interface AdminView {
   username: string;
   role: 'admin' | 'support';
   status: 'active' | 'blocked';
+}
+
+export const CREDIT_TRANSACTION_TYPES = [
+  'purchase',
+  'welcome_bonus',
+  'weekly_bonus',
+  'student_bonus',
+  'admin_bonus',
+  'ai_usage',
+  'document_usage',
+  'refund',
+  'adjustment',
+  'reversal',
+] as const;
+export type CreditTransactionType = (typeof CREDIT_TRANSACTION_TYPES)[number];
+
+export const CREDIT_BUCKET_TYPES = ['paid', 'weekly', 'bonus'] as const;
+export type CreditBucketType = (typeof CREDIT_BUCKET_TYPES)[number];
+
+export interface CreditBalanceView {
+  total: number;
+  paid: number;
+  weekly: number;
+  bonus: number;
+  nextExpiry: string | null;
+  lowBalance: boolean;
+  zeroBalance: boolean;
+}
+
+export interface CreditTransactionView {
+  id: string;
+  type: CreditTransactionType;
+  bucketType: CreditBucketType;
+  amount: number;
+  balanceAfter: number;
+  expiresAt: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface CreditTransactionPage {
+  items: CreditTransactionView[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export interface CreditProductView {
+  id: string;
+  code: string;
+  name: string;
+  creditAmount: number;
+  price: number;
+  currency: 'UZS';
+}
+
+export interface MarketplaceAcceptBalanceView {
+  balance: number;
+  nextExpiry: string | null;
+}
+
+export interface MarketplaceAcceptProductView {
+  id: string;
+  code: string;
+  name: string;
+  acceptCount: number;
+  price: number;
+  currency: 'UZS';
+  expiresInDays: number | null;
+}
+
+export const PAYMENT_PRODUCT_TYPES = ['credits', 'marketplace_accepts', 'profile_tariff'] as const;
+export type PaymentProductType = (typeof PAYMENT_PRODUCT_TYPES)[number];
+export const PAYMENT_STATUSES = ['created', 'pending', 'paid', 'failed', 'cancelled'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+export interface PaymentView {
+  id: string;
+  provider: string;
+  providerPaymentId: string | null;
+  productType: PaymentProductType;
+  productId: string;
+  productCode: string;
+  productUnits: number;
+  amountMoney: number;
+  currency: 'UZS';
+  status: PaymentStatus;
+  checkoutUrl: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  failedAt: string | null;
 }

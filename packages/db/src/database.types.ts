@@ -235,6 +235,111 @@ export type Database = {
           },
         ];
       };
+      credit_products: {
+        Row: {
+          active: boolean;
+          code: string;
+          created_at: string;
+          credit_amount: number | null;
+          currency: string;
+          id: string;
+          name: string;
+          name_en: string;
+          name_ru: string;
+          name_uz: string;
+          price: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          active?: boolean;
+          code: string;
+          created_at?: string;
+          credit_amount?: number | null;
+          currency?: string;
+          id?: string;
+          name: string;
+          name_en: string;
+          name_ru: string;
+          name_uz: string;
+          price?: number | null;
+          updated_at?: string;
+        };
+        Update: {
+          active?: boolean;
+          code?: string;
+          created_at?: string;
+          credit_amount?: number | null;
+          currency?: string;
+          id?: string;
+          name?: string;
+          name_en?: string;
+          name_ru?: string;
+          name_uz?: string;
+          price?: number | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      credit_transactions: {
+        Row: {
+          amount: number;
+          balance_after: number;
+          bucket_type: string;
+          created_at: string;
+          created_by: string | null;
+          expires_at: string | null;
+          id: string;
+          reason: string | null;
+          reference_id: string | null;
+          source: string | null;
+          type: string;
+          user_id: string;
+        };
+        Insert: {
+          amount: number;
+          balance_after: number;
+          bucket_type: string;
+          created_at?: string;
+          created_by?: string | null;
+          expires_at?: string | null;
+          id?: string;
+          reason?: string | null;
+          reference_id?: string | null;
+          source?: string | null;
+          type: string;
+          user_id: string;
+        };
+        Update: {
+          amount?: number;
+          balance_after?: number;
+          bucket_type?: string;
+          created_at?: string;
+          created_by?: string | null;
+          expires_at?: string | null;
+          id?: string;
+          reason?: string | null;
+          reference_id?: string | null;
+          source?: string | null;
+          type?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'credit_transactions_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'admin_accounts';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'credit_transactions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       lawyer_profiles: {
         Row: {
           bio: string | null;
@@ -380,6 +485,157 @@ export type Database = {
             columns: ['reviewed_by'];
             isOneToOne: false;
             referencedRelation: 'admin_accounts';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      marketplace_accept_products: {
+        Row: {
+          accept_count: number;
+          active: boolean;
+          code: string;
+          created_at: string;
+          currency: string;
+          expires_in_days: number | null;
+          id: string;
+          name: string;
+          name_en: string;
+          name_ru: string;
+          name_uz: string;
+          price: number;
+          updated_at: string;
+        };
+        Insert: {
+          accept_count: number;
+          active?: boolean;
+          code: string;
+          created_at?: string;
+          currency?: string;
+          expires_in_days?: number | null;
+          id?: string;
+          name: string;
+          name_en: string;
+          name_ru: string;
+          name_uz: string;
+          price: number;
+          updated_at?: string;
+        };
+        Update: {
+          accept_count?: number;
+          active?: boolean;
+          code?: string;
+          created_at?: string;
+          currency?: string;
+          expires_in_days?: number | null;
+          id?: string;
+          name?: string;
+          name_en?: string;
+          name_ru?: string;
+          name_uz?: string;
+          price?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      marketplace_accept_transactions: {
+        Row: {
+          amount: number;
+          balance_after: number;
+          created_at: string;
+          expires_at: string | null;
+          id: string;
+          lawyer_id: string;
+          reference_id: string | null;
+          type: string;
+        };
+        Insert: {
+          amount: number;
+          balance_after: number;
+          created_at?: string;
+          expires_at?: string | null;
+          id?: string;
+          lawyer_id: string;
+          reference_id?: string | null;
+          type: string;
+        };
+        Update: {
+          amount?: number;
+          balance_after?: number;
+          created_at?: string;
+          expires_at?: string | null;
+          id?: string;
+          lawyer_id?: string;
+          reference_id?: string | null;
+          type?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'marketplace_accept_transactions_lawyer_id_fkey';
+            columns: ['lawyer_id'];
+            isOneToOne: false;
+            referencedRelation: 'lawyer_profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      payments: {
+        Row: {
+          amount_money: number;
+          created_at: string;
+          currency: string;
+          failed_at: string | null;
+          id: string;
+          idempotency_key: string;
+          paid_at: string | null;
+          product_code: string;
+          product_id: string;
+          product_units: number;
+          provider: string;
+          provider_payment_id: string | null;
+          status: string;
+          type: string;
+          user_id: string;
+        };
+        Insert: {
+          amount_money: number;
+          created_at?: string;
+          currency?: string;
+          failed_at?: string | null;
+          id?: string;
+          idempotency_key: string;
+          paid_at?: string | null;
+          product_code: string;
+          product_id: string;
+          product_units: number;
+          provider: string;
+          provider_payment_id?: string | null;
+          status?: string;
+          type: string;
+          user_id: string;
+        };
+        Update: {
+          amount_money?: number;
+          created_at?: string;
+          currency?: string;
+          failed_at?: string | null;
+          id?: string;
+          idempotency_key?: string;
+          paid_at?: string | null;
+          product_code?: string;
+          product_id?: string;
+          product_units?: number;
+          provider?: string;
+          provider_payment_id?: string | null;
+          status?: string;
+          type?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'payments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
         ];
@@ -561,6 +817,201 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      accept_balance: {
+        Args: { p_lawyer_id: string; p_now?: string };
+        Returns: {
+          balance: number;
+          next_expiry: string;
+        }[];
+      };
+      credit_balance: {
+        Args: { p_now?: string; p_user_id: string };
+        Returns: {
+          bonus: number;
+          next_expiry: string;
+          paid: number;
+          total: number;
+          weekly: number;
+        }[];
+      };
+      debit_accept: {
+        Args: { p_lawyer_id: string; p_now?: string; p_reference_id: string };
+        Returns: {
+          amount: number;
+          balance_after: number;
+          created_at: string;
+          expires_at: string | null;
+          id: string;
+          lawyer_id: string;
+          reference_id: string | null;
+          type: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_accept_transactions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      debit_credits: {
+        Args: {
+          p_amount: number;
+          p_now?: string;
+          p_reason?: string;
+          p_reference_id: string;
+          p_source: string;
+          p_type: string;
+          p_user_id: string;
+        };
+        Returns: {
+          amount: number;
+          balance_after: number;
+          bucket_type: string;
+          created_at: string;
+          created_by: string | null;
+          expires_at: string | null;
+          id: string;
+          reason: string | null;
+          reference_id: string | null;
+          source: string | null;
+          type: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'credit_transactions';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      grant_accepts: {
+        Args: {
+          p_amount: number;
+          p_expires_at?: string;
+          p_lawyer_id: string;
+          p_now?: string;
+          p_reference_id: string;
+          p_type: string;
+        };
+        Returns: {
+          amount: number;
+          balance_after: number;
+          created_at: string;
+          expires_at: string | null;
+          id: string;
+          lawyer_id: string;
+          reference_id: string | null;
+          type: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'marketplace_accept_transactions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      grant_admin_credit_bonus: {
+        Args: {
+          p_admin_id: string;
+          p_amount: number;
+          p_now?: string;
+          p_reason: string;
+          p_reference_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          amount: number;
+          balance_after: number;
+          bucket_type: string;
+          created_at: string;
+          created_by: string | null;
+          expires_at: string | null;
+          id: string;
+          reason: string | null;
+          reference_id: string | null;
+          source: string | null;
+          type: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'credit_transactions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      grant_credit: {
+        Args: {
+          p_amount: number;
+          p_bucket_type: string;
+          p_created_by?: string;
+          p_expires_at?: string;
+          p_now?: string;
+          p_reason?: string;
+          p_reference_id: string;
+          p_source: string;
+          p_type: string;
+          p_user_id: string;
+        };
+        Returns: {
+          amount: number;
+          balance_after: number;
+          bucket_type: string;
+          created_at: string;
+          created_by: string | null;
+          expires_at: string | null;
+          id: string;
+          reason: string | null;
+          reference_id: string | null;
+          source: string | null;
+          type: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'credit_transactions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      grant_weekly_credits: { Args: { p_now?: string }; Returns: number };
+      grant_welcome_credit: {
+        Args: { p_now?: string; p_user_id: string };
+        Returns: {
+          amount: number;
+          balance_after: number;
+          bucket_type: string;
+          created_at: string;
+          created_by: string | null;
+          expires_at: string | null;
+          id: string;
+          reason: string | null;
+          reference_id: string | null;
+          source: string | null;
+          type: string;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'credit_transactions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      process_payment_webhook: {
+        Args: {
+          p_now?: string;
+          p_payment_id: string;
+          p_provider: string;
+          p_provider_payment_id: string;
+          p_status: string;
+        };
+        Returns: {
+          payment_id: string;
+          payment_status: string;
+          processed: boolean;
+        }[];
+      };
       review_lawyer_verification: {
         Args: {
           p_admin_id: string;
