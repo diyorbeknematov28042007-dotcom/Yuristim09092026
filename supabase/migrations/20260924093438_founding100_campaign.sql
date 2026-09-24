@@ -444,3 +444,5 @@ comment on table public.founding100_events is
   'PII-minimized Founding 100 funnel events associated with reservation IDs when available.';
 
 commit;
+
+

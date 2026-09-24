@@ -1,5 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import type {
+  Founding100Analytics,
   Founding100ConfirmResult,
   Founding100EventName,
   Founding100Repository,
@@ -117,6 +118,7 @@ export class Founding100Service {
     eventName: Founding100EventName;
     source?: string | null | undefined;
     reservationId?: string | undefined;
+    visitorId?: string | undefined;
   }): Promise<void> {
     if (!FRONTEND_EVENTS.has(input.eventName)) {
       throw new AppError(400, 'VALIDATION_ERROR', 'Event is not accepted from the public client');
@@ -134,6 +136,7 @@ export class Founding100Service {
         now: this.now(),
         ...(input.reservationId ? { reservationId: input.reservationId } : {}),
         source,
+        ...(input.visitorId ? { visitorHash: this.hashVisitorId(input.visitorId) } : {}),
       });
     } catch (error) {
       founding100Error(error);
@@ -144,10 +147,52 @@ export class Founding100Service {
     return this.repository.recordOnboardingComplete(userId, this.now());
   }
 
+  async analytics(days: number): Promise<
+    Founding100Analytics & {
+      status: Founding100Status;
+      conversion: {
+        visitorToReservation: number;
+        reservationToConfirmation: number;
+        visitorToConfirmation: number;
+      };
+    }
+  > {
+    const to = this.now();
+    const from = new Date(to.getTime() - days * 86_400_000);
+    const [analytics, status] = await Promise.all([
+      this.repository.getAnalytics({ from, to }),
+      this.repository.getStatus(to),
+    ]);
+    const percent = (value: number, total: number): number =>
+      total > 0 ? Math.round((value / total) * 1_000) / 10 : 0;
+
+    return {
+      ...analytics,
+      conversion: {
+        reservationToConfirmation: percent(
+          analytics.totals.confirmed,
+          analytics.totals.reservations,
+        ),
+        visitorToConfirmation: percent(analytics.totals.confirmed, analytics.totals.uniqueVisitors),
+        visitorToReservation: percent(
+          analytics.totals.reservations,
+          analytics.totals.uniqueVisitors,
+        ),
+      },
+      status,
+    };
+  }
+
   private deriveToken(idempotencyKey: string): string {
     return createHmac('sha256', this.options.tokenSecret)
       .update(`founding100:${idempotencyKey}`)
       .digest('base64url');
+  }
+
+  private hashVisitorId(visitorId: string): string {
+    return createHmac('sha256', this.options.tokenSecret)
+      .update(`founding100:visitor:${visitorId}`)
+      .digest('hex');
   }
 }
 

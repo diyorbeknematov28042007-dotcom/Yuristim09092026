@@ -3,6 +3,9 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './database.types.js';
 import type {
+  Founding100Analytics,
+  Founding100AnalyticsDay,
+  Founding100AnalyticsSource,
   Founding100ConfirmResult,
   Founding100Repository,
   Founding100ReservationRow,
@@ -33,6 +36,48 @@ function statusView(value: Record<string, any>): Founding100Status {
     isOpen: Boolean(value.isOpen),
     limit: Number(value.limit),
     reserved: Number(value.reserved),
+  };
+}
+
+function analyticsView(value: Record<string, any>): Founding100Analytics {
+  const range = requireObject(value.range, null);
+  const totals = requireObject(value.totals, null);
+  const sources = Array.isArray(value.sources) ? value.sources : [];
+  const daily = Array.isArray(value.daily) ? value.daily : [];
+  const sourceView = (row: unknown): Founding100AnalyticsSource => {
+    const item = requireObject(row, null);
+    return {
+      confirmed: Number(item.confirmed),
+      pageViews: Number(item.pageViews),
+      reservations: Number(item.reservations),
+      source: String(item.source),
+      uniqueVisitors: Number(item.uniqueVisitors),
+    };
+  };
+  const dayView = (row: unknown): Founding100AnalyticsDay => {
+    const item = requireObject(row, null);
+    return {
+      confirmed: Number(item.confirmed),
+      date: String(item.date),
+      pageViews: Number(item.pageViews),
+      reservations: Number(item.reservations),
+      uniqueVisitors: Number(item.uniqueVisitors),
+    };
+  };
+
+  return {
+    daily: daily.map(dayView),
+    range: { from: String(range.from), to: String(range.to) },
+    sources: sources.map(sourceView),
+    totals: {
+      confirmed: Number(totals.confirmed),
+      ctaClicks: Number(totals.ctaClicks),
+      onboardingCompleted: Number(totals.onboardingCompleted),
+      pageViews: Number(totals.pageViews),
+      reservations: Number(totals.reservations),
+      telegramOpened: Number(totals.telegramOpened),
+      uniqueVisitors: Number(totals.uniqueVisitors),
+    },
   };
 }
 
@@ -98,6 +143,7 @@ export class SupabaseFounding100Repository implements Founding100Repository {
       p_now: input.now.toISOString(),
       p_reservation_id: input.reservationId ?? null,
       p_source: input.source,
+      p_visitor_hash: input.visitorHash ?? null,
     });
     if (error) fail(error);
   }
@@ -109,5 +155,13 @@ export class SupabaseFounding100Repository implements Founding100Repository {
     });
     if (error) fail(error);
     return Boolean(data);
+  }
+
+  async getAnalytics(input: { from: Date; to: Date }): Promise<Founding100Analytics> {
+    const { data, error } = await this.client.rpc('founding100_analytics', {
+      p_from: input.from.toISOString(),
+      p_to: input.to.toISOString(),
+    });
+    return analyticsView(requireObject(data, error));
   }
 }

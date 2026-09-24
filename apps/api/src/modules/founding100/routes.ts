@@ -35,6 +35,7 @@ export function registerFounding100Routes(app: FastifyInstance, service: Foundin
           event: frontendEventSchema,
           reservationId: z.string().uuid().optional(),
           source: z.string().max(256).optional(),
+          visitorId: z.string().uuid().optional(),
         })
         .strict(),
       request.body,
@@ -44,6 +45,7 @@ export function registerFounding100Routes(app: FastifyInstance, service: Foundin
       eventName: body.event as Founding100EventName,
       ...(body.reservationId ? { reservationId: body.reservationId } : {}),
       source: body.source,
+      visitorId: body.visitorId,
     });
     return reply.status(202).send({ accepted: true });
   });

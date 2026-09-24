@@ -4,6 +4,7 @@ import { AppError } from '../../lib/errors.js';
 import { parseInput } from '../auth/http.js';
 import type { AdminService, IssuedAdminSession } from './service.js';
 import type { CreditService } from '../credits/service.js';
+import type { Founding100Service } from '../founding100/service.js';
 
 const ADMIN_COOKIE = 'yuristim_admin_session';
 
@@ -28,7 +29,12 @@ function setCookie(reply: FastifyReply, issued: IssuedAdminSession, production: 
 
 export function registerAdminRoutes(
   app: FastifyInstance,
-  options: { service: AdminService; production: boolean; credits?: CreditService },
+  options: {
+    service: AdminService;
+    production: boolean;
+    credits?: CreditService;
+    founding100?: Founding100Service;
+  },
 ): void {
   const service = options.service;
   app.post('/admin/auth/login', async (request, reply) => {
@@ -83,6 +89,21 @@ export function registerAdminRoutes(
     );
     return service.listVerifications(query);
   });
+
+  if (options.founding100) {
+    app.get('/admin/founding100/analytics', async (request) => {
+      await service.authenticate(readAdminToken(request));
+      const query = parseInput(
+        z
+          .object({
+            days: z.coerce.number().int().min(1).max(366).default(30),
+          })
+          .strict(),
+        request.query,
+      );
+      return options.founding100!.analytics(query.days);
+    });
+  }
 
   app.get('/admin/lawyer-verifications/:id', async (request) => {
     await service.authenticate(readAdminToken(request));

@@ -98,6 +98,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       if (core.adminService) {
         registerAdminRoutes(coreApp, {
           ...(core.creditService ? { credits: core.creditService } : {}),
+          ...(core.founding100Service ? { founding100: core.founding100Service } : {}),
           production: core.production,
           service: core.adminService,
         });
