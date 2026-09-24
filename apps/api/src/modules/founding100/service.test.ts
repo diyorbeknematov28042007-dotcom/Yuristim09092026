@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  Founding100Analytics,
   Founding100ConfirmResult,
   Founding100Repository,
   Founding100ReservationRow,
@@ -8,6 +9,7 @@ import type {
 import { Founding100Service, normalizeFounding100Source } from './service.js';
 
 class MemoryFounding100Repository implements Founding100Repository {
+  readonly events: Array<Parameters<Founding100Repository['recordEvent']>[0]> = [];
   private reservations = new Map<
     string,
     {
@@ -88,10 +90,29 @@ class MemoryFounding100Repository implements Founding100Repository {
     throw new Error('not needed');
   }
 
-  async recordEvent(): Promise<void> {}
+  async recordEvent(input: Parameters<Founding100Repository['recordEvent']>[0]): Promise<void> {
+    this.events.push(input);
+  }
 
   async recordOnboardingComplete(): Promise<boolean> {
     return false;
+  }
+
+  async getAnalytics(input: { from: Date; to: Date }): Promise<Founding100Analytics> {
+    return {
+      daily: [],
+      range: { from: input.from.toISOString(), to: input.to.toISOString() },
+      sources: [],
+      totals: {
+        confirmed: 2,
+        ctaClicks: 6,
+        onboardingCompleted: 1,
+        pageViews: 12,
+        reservations: 4,
+        telegramOpened: 3,
+        uniqueVisitors: 10,
+      },
+    };
   }
 }
 
@@ -135,5 +156,43 @@ describe('Founding100Service', () => {
     const status = await service.status();
     expect(status.available).toBe(0);
     expect(status.confirmed + status.reserved).toBe(100);
+  });
+
+  it('hashes anonymous visitor identifiers before persistence', async () => {
+    const repository = new MemoryFounding100Repository();
+    const service = new Founding100Service(repository, {
+      tokenSecret: 'z'.repeat(64),
+    });
+    const visitorId = '8b2f9694-a8f1-4bdf-8ebd-08c3d89e936d';
+
+    await service.recordFrontendEvent({
+      eventName: 'beta_page_view',
+      source: 'telegram',
+      visitorId,
+    });
+
+    expect(repository.events).toHaveLength(1);
+    expect(repository.events[0]?.visitorHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(repository.events[0]?.visitorHash).not.toContain(visitorId);
+  });
+
+  it('returns bounded funnel analytics with conversion rates', async () => {
+    const now = new Date('2026-09-24T09:00:00.000Z');
+    const service = new Founding100Service(new MemoryFounding100Repository(), {
+      now: () => now,
+      tokenSecret: 'a'.repeat(64),
+    });
+
+    const analytics = await service.analytics(30);
+
+    expect(analytics.range).toEqual({
+      from: '2026-08-25T09:00:00.000Z',
+      to: now.toISOString(),
+    });
+    expect(analytics.conversion).toEqual({
+      reservationToConfirmation: 50,
+      visitorToConfirmation: 20,
+      visitorToReservation: 40,
+    });
   });
 });
