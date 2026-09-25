@@ -8,9 +8,9 @@ select has_table('public', 'marketplace_accept_transactions', 'accept transactio
 select has_table('public', 'marketplace_accept_products', 'accept products exist');
 select has_table('public', 'payments', 'payments exist');
 select col_is_unique('public', 'payments', 'idempotency_key', 'checkout idempotency key is unique');
-select has_check('public', 'credit_transactions', 'credit_bucket_expiry_matches', 'bucket expiry is constrained');
-select has_check('public', 'credit_products', 'active_credit_product_is_sellable', 'active credit products are sellable');
-select has_check('public', 'payments', 'payment_terminal_timestamps_match', 'payment terminal timestamps are constrained');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.credit_transactions'::regclass and contype = 'c' and conname = 'credit_bucket_expiry_matches'), 'bucket expiry is constrained');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.credit_products'::regclass and contype = 'c' and conname = 'active_credit_product_is_sellable'), 'active credit products are sellable');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.payments'::regclass and contype = 'c' and conname = 'payment_terminal_timestamps_match'), 'payment terminal timestamps are constrained');
 select is((select count(*)::integer from public.credit_products), 4, 'four draft credit products are seeded');
 select is((select count(*)::integer from public.credit_products where active), 0, 'unpriced credit products are not active');
 select is((select price from public.marketplace_accept_products where code = 'single_accept'), 9900.00::numeric, 'single accept costs 9900 UZS');

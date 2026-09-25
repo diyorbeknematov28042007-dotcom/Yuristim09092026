@@ -17,10 +17,10 @@ select col_is_unique('public', 'lawyer_profiles', 'public_slug', 'public slug is
 select col_is_pk('public', 'lawyer_specializations', array['lawyer_id', 'specialization_id'], 'specialization pair is unique');
 select col_is_unique('public', 'admin_sessions', 'token_hash', 'admin session hash is unique');
 
-select has_check('public', 'lawyer_profiles', 'lawyer_profiles_verification_status_check', 'profile verification status is constrained');
-select has_check('public', 'lawyer_verifications', 'lawyer_verifications_status_check', 'request status is constrained');
-select has_check('public', 'lawyer_verifications', 'rejected_verification_has_reason', 'rejected request requires a reason');
-select has_check('public', 'verification_documents', 'verification_documents_size_bytes_check', 'files have a five-megabyte bound');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.lawyer_profiles'::regclass and contype = 'c' and conname = 'lawyer_profiles_verification_status_check'), 'profile verification status is constrained');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.lawyer_verifications'::regclass and contype = 'c' and conname = 'lawyer_verifications_status_check'), 'request status is constrained');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.lawyer_verifications'::regclass and contype = 'c' and conname = 'rejected_verification_has_reason'), 'rejected request requires a reason');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.verification_documents'::regclass and contype = 'c' and conname = 'verification_documents_size_bytes_check'), 'files have a five-megabyte bound');
 
 select is((select count(*)::integer from public.specializations where active), 12, 'MVP specializations are seeded');
 select is((select public from storage.buckets where id = 'lawyer-verification'), false, 'verification bucket is private');

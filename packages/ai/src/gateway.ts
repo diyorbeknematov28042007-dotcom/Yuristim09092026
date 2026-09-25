@@ -254,16 +254,22 @@ export class AiGateway {
     let attemptNumber = 0;
     let emitted = false;
 
-    for (const [configIndex, config] of configs.entries()) {
+    const routes = configs.map((config) => ({ config, deferred: false }));
+    for (const [configIndex, { config, deferred }] of routes.entries()) {
+      const diagnostics = { provider: config.provider, model: config.model };
+      const retryLimit = deferred ? this.options.maxRetries - 1 : this.options.maxRetries;
+      if (deferred) {
+        await this.wait(Math.min(100, Math.max(0, deadline - Date.now())));
+      }
       if (request.signal?.aborted) throw new AiProviderError('cancelled', false);
       const adapter = this.adapters.get(config.provider);
       if (!config.enabled || !adapter?.configured) {
-        lastError = new AiProviderError('configuration', false);
+        lastError = new AiProviderError('configuration', false, undefined, undefined, diagnostics);
         if (autoFailover) continue;
         throw lastError;
       }
       if (request.onDelta && (!config.supportsStreaming || !adapter.supportsStreaming)) {
-        lastError = new AiProviderError('configuration', false);
+        lastError = new AiProviderError('configuration', false, undefined, undefined, diagnostics);
         if (autoFailover) continue;
         throw lastError;
       }
@@ -278,12 +284,13 @@ export class AiGateway {
       } catch {
         this.diagnose(request, { operation: 'acquire_provider', provider: config.provider });
         // Fail closed for this provider. Another provider still requires its own admission.
-        lastError = new AiProviderError('unknown', false);
+        lastError = new AiProviderError('unknown', false, undefined, undefined, diagnostics);
         if (autoFailover) continue;
         throw lastError;
       }
       if (!acquired.allowed) {
         lastError = new AiProviderError('unavailable', false, undefined, undefined, {
+          ...diagnostics,
           reason: 'circuit_open',
         });
         if (autoFailover) continue;
@@ -291,7 +298,7 @@ export class AiGateway {
       }
 
       let providerError: AiProviderError | undefined;
-      for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
+      for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
         attemptNumber += 1;
         const startedAt = this.now();
         if (request.signal?.aborted) throw new AiProviderError('cancelled', false);
@@ -321,7 +328,14 @@ export class AiGateway {
             response = await adapter.generate(providerRequest);
           }
         } catch (error) {
-          providerError = normalizedError(error, signal, request.signal);
+          const normalized = normalizedError(error, signal, request.signal);
+          providerError = new AiProviderError(
+            normalized.category,
+            normalized.retryable,
+            undefined,
+            normalized.retryAfterMilliseconds,
+            { ...normalized.diagnostics, ...diagnostics },
+          );
         } finally {
           signal.cleanup();
         }
@@ -369,16 +383,26 @@ export class AiGateway {
         if (
           emitted ||
           !sameProviderRetryAllowed(providerError) ||
-          (autoFailover &&
-            configs
-              .slice(configIndex + 1)
-              .some(
-                (candidate) =>
-                  candidate.enabled && this.adapters.get(candidate.provider)?.configured,
-              )) ||
-          attempt >= this.options.maxRetries ||
+          attempt >= retryLimit ||
           request.signal?.aborted
         ) {
+          break;
+        }
+        if (
+          autoFailover &&
+          !deferred &&
+          routes
+            .slice(configIndex + 1)
+            .some(
+              (candidate) =>
+                !candidate.deferred &&
+                candidate.config.enabled &&
+                this.adapters.get(candidate.config.provider)?.configured,
+            )
+        ) {
+          // Try alternatives first, then spend the remaining retry allowance if needed.
+          // Deferred routes acquire shared admission again: an OPEN circuit is never bypassed.
+          routes.push({ config, deferred: true });
           break;
         }
         await this.wait(Math.min(100 * (attempt + 1), Math.max(0, deadline - Date.now())));

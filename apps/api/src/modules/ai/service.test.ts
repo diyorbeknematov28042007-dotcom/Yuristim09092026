@@ -584,7 +584,12 @@ describe('AiService conversation and charging lifecycle', () => {
     const repository = new MemoryAiRepository();
     const adapters = (['bai', 'openai', 'anthropic'] as const).map((name): AiProviderAdapter => ({
       configured: true,
-      generate: vi.fn().mockRejectedValue(new AiProviderError('unavailable', false)),
+      generate: vi.fn().mockRejectedValue(
+        new AiProviderError('unavailable', false, undefined, undefined, {
+          statusCode: 503,
+          reason: 'http_error',
+        }),
+      ),
       name,
       stream: vi.fn(),
       supportsStreaming: true,
@@ -623,9 +628,11 @@ describe('AiService conversation and charging lifecycle', () => {
     const complete = vi.spyOn(repository, 'completeMessage');
     const service = new AiService(repository, gateway, credits, () => now);
     const conversation = await service.createConversation(userA, 'uz', 'expert');
+    const telemetry = vi.fn();
     await expect(
       service.send({
         content: 'Barcha provider muvaffaqiyatsiz',
+        telemetry,
         conversationId: conversation.id,
         idempotencyKey: 'request-all-failed',
         language: 'uz',
@@ -633,6 +640,15 @@ describe('AiService conversation and charging lifecycle', () => {
         userId: userA,
       }),
     ).rejects.toMatchObject({ code: 'AI_PROVIDER_UNAVAILABLE' });
+    expect(telemetry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'anthropic',
+        model: 'anthropic-test',
+        statusCode: 503,
+        errorReason: 'http_error',
+        success: false,
+      }),
+    );
     expect(complete).not.toHaveBeenCalled();
     expect(repository.attempts).toHaveLength(3);
     expect(repository.messages.filter((message) => message.role === 'assistant')).toEqual([

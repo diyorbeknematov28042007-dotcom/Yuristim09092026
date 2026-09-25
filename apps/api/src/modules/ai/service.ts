@@ -47,8 +47,8 @@ const defaultTitles: Record<Language, string> = {
 export interface AiTelemetry {
   requestId: string;
   conversationId: string;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
   durationMilliseconds: number;
   success: boolean;
   inputTokens?: number;
@@ -590,8 +590,12 @@ export class AiService {
         ...(error instanceof AiProviderError && error.diagnostics.reason
           ? { errorReason: error.diagnostics.reason }
           : {}),
-        model: config.model,
-        provider: config.provider,
+        ...(error instanceof AiProviderError
+          ? {
+              ...(error.diagnostics.model ? { model: error.diagnostics.model } : {}),
+              ...(error.diagnostics.provider ? { provider: error.diagnostics.provider } : {}),
+            }
+          : { model: config.model, provider: config.provider }),
         requestId: input.requestId,
         success: false,
       });

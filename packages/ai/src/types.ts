@@ -39,6 +39,8 @@ export type AiProviderErrorCategory =
   | 'unknown';
 
 export interface AiProviderDiagnostics {
+  provider?: AiProviderName;
+  model?: string;
   statusCode?: number | undefined;
   reason?:
     | 'http_error'

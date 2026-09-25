@@ -506,6 +506,76 @@ describe('B1 request time budgets', () => {
     }
   });
 
+  it.each(['paused', 'open', 'store_failure'] as const)(
+    'retains a retry when all fallbacks are %s',
+    async (failure) => {
+      const stateStore = new InMemoryAiProviderStateStore();
+      if (failure === 'paused') stateStore.setManualEnabled('openai', false);
+      if (failure === 'open') {
+        await stateStore.recordProviderFailure({
+          provider: 'openai',
+          category: 'rate_limit',
+          now: new Date(),
+          baseCooldownSeconds: 300,
+          failureThreshold: 3,
+          failureWindowSeconds: 120,
+          maxCooldownSeconds: 1800,
+        });
+      }
+      if (failure === 'store_failure') {
+        const acquire = stateStore.acquireProvider.bind(stateStore);
+        vi.spyOn(stateStore, 'acquireProvider').mockImplementation((input) =>
+          input.provider === 'openai' ? Promise.reject(new Error('database')) : acquire(input),
+        );
+      }
+      const bai = vi
+        .fn()
+        .mockRejectedValueOnce(new AiProviderError('unavailable', true))
+        .mockResolvedValueOnce(success('retried'));
+      const openai = vi.fn();
+      await expect(
+        gateway({
+          adapters: [adapter('bai', bai), adapter('openai', openai)],
+          maxRetries: 1,
+          stateStore,
+        }).execute(expertRequest),
+      ).resolves.toMatchObject({ content: 'retried' });
+      expect(bai).toHaveBeenCalledTimes(2);
+      expect(openai).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not bypass a circuit that opens before a deferred retry', async () => {
+    const stateStore = new InMemoryAiProviderStateStore();
+    const record = stateStore.recordProviderFailure.bind(stateStore);
+    vi.spyOn(stateStore, 'recordProviderFailure').mockImplementation((input) =>
+      record({ ...input, failureThreshold: 1 }),
+    );
+    stateStore.setManualEnabled('openai', false);
+    const bai = vi.fn().mockRejectedValue(new AiProviderError('unavailable', true));
+    await expect(
+      gateway({
+        adapters: [adapter('bai', bai), adapter('openai', vi.fn())],
+        maxRetries: 1,
+        stateStore,
+      }).execute(expertRequest),
+    ).rejects.toMatchObject({ diagnostics: { reason: 'circuit_open' } });
+    expect(bai).toHaveBeenCalledOnce();
+  });
+
+  it('bounds deferred attempts by the original per-provider retry allowance', async () => {
+    const bai = vi.fn().mockRejectedValue(new AiProviderError('unavailable', true));
+    const openai = vi.fn().mockRejectedValue(new AiProviderError('unavailable', true));
+    await expect(
+      gateway({
+        adapters: [adapter('bai', bai), adapter('openai', openai)],
+        maxRetries: 1,
+      }).execute(expertRequest),
+    ).rejects.toMatchObject({ category: 'unavailable' });
+    expect(bai).toHaveBeenCalledTimes(2);
+    expect(openai).toHaveBeenCalledTimes(2);
+  });
+
   it('spends the next Expert attempt on a healthy fallback before repeating a failed provider', async () => {
     const bai = vi.fn().mockRejectedValue(new AiProviderError('unavailable', true));
     const openai = vi.fn().mockResolvedValue(success('fallback'));

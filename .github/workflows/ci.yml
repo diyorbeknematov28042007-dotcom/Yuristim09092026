@@ -72,7 +72,7 @@ jobs:
       - name: Start isolated database and apply migrations
         run: supabase db start
       - name: Run database tests
-        run: supabase test db
+        run: supabase test db supabase/tests/database/*.test.sql
       - name: Stop isolated database
         if: always()
         run: supabase stop --no-backup
