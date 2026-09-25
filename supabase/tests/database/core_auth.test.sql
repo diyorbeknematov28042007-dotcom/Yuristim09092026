@@ -18,18 +18,8 @@ select col_is_unique(
   'login challenge hash is unique'
 );
 
-select has_check(
-  'public',
-  'users',
-  'users_onboarding_status_check',
-  'onboarding state values are constrained'
-);
-select has_check(
-  'public',
-  'users',
-  'completed_onboarding_is_valid',
-  'completed onboarding requires its persisted fields'
-);
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.users'::regclass and contype = 'c' and conname = 'users_onboarding_status_check'), 'onboarding state values are constrained');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.users'::regclass and contype = 'c' and conname = 'completed_onboarding_is_valid'), 'completed onboarding requires its persisted fields');
 
 select policies_are(
   'public',

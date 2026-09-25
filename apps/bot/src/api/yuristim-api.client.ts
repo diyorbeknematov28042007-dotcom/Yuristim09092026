@@ -480,7 +480,7 @@ export class YuristimApiClient implements YuristimApi {
     this.now = options.now ?? Date.now;
     this.requestId = options.requestId ?? randomUUID;
     this.timeoutMilliseconds = options.timeoutMilliseconds ?? 5_000;
-    this.aiTimeoutMilliseconds = options.aiTimeoutMilliseconds ?? 60_000;
+    this.aiTimeoutMilliseconds = options.aiTimeoutMilliseconds ?? 105_000;
   }
 
   async ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult> {
@@ -892,6 +892,8 @@ export class YuristimApiClient implements YuristimApi {
     const timer = setTimeout(() => controller.abort(), timeoutMilliseconds);
     let statusCode: number | undefined;
     let success = false;
+    let errorCategory: string | undefined;
+    const requestId = this.requestId();
 
     try {
       const correlationId = this.options.correlationId?.();
@@ -900,7 +902,7 @@ export class YuristimApiClient implements YuristimApi {
         headers: {
           ...(serializedBody ? { 'content-type': 'application/json' } : {}),
           ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
-          'x-request-id': this.requestId(),
+          'x-request-id': requestId,
           'x-yuristim-signature': createInternalSignature(
             method,
             path,
@@ -925,6 +927,11 @@ export class YuristimApiClient implements YuristimApi {
       success = true;
       return payload;
     } catch (error) {
+      errorCategory = controller.signal.aborted
+        ? 'bot_to_api_timeout'
+        : error instanceof YuristimApiError
+          ? error.code
+          : 'network_error';
       if (error instanceof YuristimApiError) throw error;
       throw new YuristimApiError('API_UNAVAILABLE', 503);
     } finally {
@@ -933,6 +940,8 @@ export class YuristimApiClient implements YuristimApi {
         durationMilliseconds: Date.now() - startedAt,
         method,
         route: sanitizeRoute(path),
+        requestId,
+        ...(errorCategory ? { errorCategory } : {}),
         ...(statusCode === undefined ? {} : { statusCode }),
         success,
       });

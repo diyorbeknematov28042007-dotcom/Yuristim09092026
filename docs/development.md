@@ -73,7 +73,7 @@ Local database'ni qayta qurish va pgTAP testlarni ishga tushirish:
 
 ```bash
 supabase db reset
-supabase test db
+supabase test db supabase/tests/database/*.test.sql
 ```
 
 Migrationni edit qilgandan keyin database types qayta generatsiya qilinadi. Remote

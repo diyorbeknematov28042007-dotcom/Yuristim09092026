@@ -109,7 +109,7 @@ export function createAiGateway(
       cooldownSeconds: env.AI_PROVIDER_COOLDOWN_SECONDS,
       failureThreshold: env.AI_PROVIDER_FAILURE_THRESHOLD,
       failureWindowSeconds: env.AI_PROVIDER_FAILURE_WINDOW_SECONDS,
-      halfOpenLeaseSeconds: Math.ceil(env.AI_PROVIDER_TIMEOUT_MILLISECONDS / 1_000) + 5,
+      halfOpenLeaseSeconds: Math.ceil(env.AI_GATEWAY_TIMEOUT_MILLISECONDS / 1_000) + 5,
       maxCooldownSeconds: env.AI_PROVIDER_MAX_COOLDOWN_SECONDS,
     },
     expertRouting: {
@@ -121,5 +121,6 @@ export function createAiGateway(
     models,
     providerStateStore,
     timeoutMilliseconds: env.AI_PROVIDER_TIMEOUT_MILLISECONDS,
+    totalTimeoutMilliseconds: env.AI_GATEWAY_TIMEOUT_MILLISECONDS,
   });
 }

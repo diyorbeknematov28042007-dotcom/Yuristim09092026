@@ -8,7 +8,10 @@ export type BotPerformanceEvent =
   | 'bot_to_api'
   | 'telegram_response_start'
   | 'telegram_response_complete'
-  | 'total_duration';
+  | 'total_duration'
+  | 'ai_delivery'
+  | 'ai_refund'
+  | 'update_failed';
 
 interface BotPerformanceContext {
   correlationId: string;
@@ -21,6 +24,10 @@ interface BotPerformanceDetails {
   route?: string;
   statusCode?: number;
   success?: boolean;
+  requestId?: string;
+  errorCategory?: string;
+  chunksSent?: number;
+  chunksTotal?: number;
 }
 
 const performanceContext = new AsyncLocalStorage<BotPerformanceContext>();
@@ -44,12 +51,14 @@ export function recordBotPerformance(
 ): void {
   if (process.env.NODE_ENV === 'test') return;
   const state = performanceContext.getStore();
-  console.info({
-    component: 'bot_performance',
-    correlationId: state?.correlationId,
-    event,
-    ...details,
-  });
+  console.info(
+    JSON.stringify({
+      component: 'bot_performance',
+      correlationId: state?.correlationId,
+      event,
+      ...details,
+    }),
+  );
 }
 
 export async function withBotPerformance<T>(callback: () => Promise<T>): Promise<T> {

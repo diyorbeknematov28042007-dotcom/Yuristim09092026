@@ -77,10 +77,15 @@ export class GeminiAdapter implements AiProviderAdapter {
     const response = await this.call('generateContent', request);
     const value: unknown = await response.json().catch(() => null);
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      throw new AiProviderError('unavailable', false);
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'malformed_response',
+      });
     }
     const parsed = parseChunk(value as Record<string, unknown>);
-    if (!parsed.content.trim()) throw new AiProviderError('unavailable', false);
+    if (!parsed.content.trim())
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'empty_response',
+      });
     assertUsage(parsed.inputTokens, parsed.outputTokens);
     return {
       content: parsed.content.trim(),
@@ -105,7 +110,10 @@ export class GeminiAdapter implements AiProviderAdapter {
       inputTokens = parsed.inputTokens || inputTokens;
       outputTokens = parsed.outputTokens || outputTokens;
     }
-    if (!content.trim()) throw new AiProviderError('unavailable', false);
+    if (!content.trim())
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'empty_response',
+      });
     assertUsage(inputTokens, outputTokens);
     return { content: content.trim(), usage: { inputTokens, outputTokens } };
   }

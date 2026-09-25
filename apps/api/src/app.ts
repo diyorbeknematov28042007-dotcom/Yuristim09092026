@@ -46,6 +46,7 @@ export interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({
     bodyLimit: 7_500_000,
+    disableRequestLogging: true,
     logger: options.logger ?? {
       level: 'info',
     },

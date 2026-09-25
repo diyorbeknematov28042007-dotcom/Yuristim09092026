@@ -31,7 +31,7 @@ const botEnvSchema = z.object({
   MINI_APP_URL: optionalUrl,
   TERMS_VERSION: z.string().min(1).max(64).default('2026-09'),
   API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(500).max(30_000).default(5_000),
-  AI_API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
+  AI_API_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(5_000).max(120_000).default(105_000),
   TELEGRAM_AI_FAST_STICKER_FILE_ID: optionalTelegramFileId,
   TELEGRAM_AI_EXPERT_STICKER_FILE_ID: optionalTelegramFileId,
   TELEGRAM_AI_DOCUMENT_STICKER_FILE_ID: optionalTelegramFileId,

@@ -1276,6 +1276,33 @@ describe('Phase 7 latency safeguards', () => {
     return api;
   }
 
+  it('acknowledges a same-user callback while an earlier AI answer is pending', async () => {
+    const api = completedApi();
+    api.aiStatus = { ...api.aiStatus, botChatActive: true };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalSend = api.sendAiMessage.bind(api);
+    const send = vi.spyOn(api, 'sendAiMessage').mockImplementation(async (...args) => {
+      await gate;
+      return originalSend(...args);
+    });
+    const { bot, calls } = fixture(api);
+    const question = bot.handleUpdate(textUpdate('Question', 901), botInfo);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    const callback = bot.handleUpdate(callbackUpdate('nav:settings', 902), botInfo);
+    try {
+      await vi.waitFor(
+        () => expect(calls.some((call) => call.method === 'answerCallbackQuery')).toBe(true),
+        { timeout: 100 },
+      );
+    } finally {
+      release();
+      await Promise.all([question, callback]);
+    }
+  });
+
   it('acknowledges a callback before a slow API context dependency', async () => {
     const api = completedApi();
     let release!: () => void;

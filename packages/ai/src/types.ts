@@ -38,12 +38,28 @@ export type AiProviderErrorCategory =
   | 'cancelled'
   | 'unknown';
 
+export interface AiProviderDiagnostics {
+  provider?: AiProviderName;
+  model?: string;
+  statusCode?: number | undefined;
+  reason?:
+    | 'http_error'
+    | 'network_error'
+    | 'malformed_response'
+    | 'empty_response'
+    | 'invalid_usage'
+    | 'circuit_open'
+    | 'request_budget'
+    | undefined;
+}
+
 export class AiProviderError extends Error {
   constructor(
     readonly category: AiProviderErrorCategory,
     readonly retryable: boolean,
     message = 'AI provider request failed',
     readonly retryAfterMilliseconds?: number | undefined,
+    readonly diagnostics: AiProviderDiagnostics = {},
   ) {
     super(message);
     this.name = 'AiProviderError';
@@ -119,6 +135,8 @@ export interface AiProviderAttemptEvent {
   model: string;
   status: 'succeeded' | 'failed' | 'interrupted';
   errorCategory?: AiProviderErrorCategory | undefined;
+  statusCode?: number | undefined;
+  errorReason?: AiProviderDiagnostics['reason'];
   latencyMilliseconds: number;
   inputTokens?: number | undefined;
   outputTokens?: number | undefined;
@@ -146,6 +164,12 @@ export interface AiProviderStatus {
   state: AiProviderCircuitState;
 }
 
+export interface AiDependencyDiagnostic {
+  operation: 'acquire_provider' | 'record_success' | 'record_failure' | 'record_attempt';
+  provider: AiProviderName;
+  attemptNumber?: number;
+}
+
 export interface AiExecutionRequest {
   mode: AiMode;
   messages: AiProviderRequest['messages'];
@@ -153,6 +177,7 @@ export interface AiExecutionRequest {
   signal?: AbortSignal;
   onDelta?: (delta: string) => void | Promise<void>;
   onAttempt?: (event: AiProviderAttemptEvent) => void | Promise<void>;
+  onDiagnostic?: (event: AiDependencyDiagnostic) => void;
 }
 
 export interface AiExecutionResult extends AiProviderResponse {

@@ -37,7 +37,9 @@ function parseSseEvent(event: string): Record<string, unknown> | null {
     }
     throw new Error('SSE JSON must be an object');
   } catch {
-    throw new AiProviderError('unavailable', false);
+    throw new AiProviderError('unavailable', false, undefined, undefined, {
+      reason: 'malformed_response',
+    });
   }
 }
 
@@ -95,7 +97,17 @@ export async function assertProviderResponse(response: Response): Promise<void> 
   } catch {
     await response.body?.cancel().catch(() => undefined);
   }
-  throw mapHttpError(response.status, retryAfter, providerErrorCode);
+  const error = mapHttpError(response.status, retryAfter, providerErrorCode);
+  throw new AiProviderError(
+    error.category,
+    error.retryable,
+    undefined,
+    error.retryAfterMilliseconds,
+    {
+      statusCode: response.status,
+      reason: 'http_error',
+    },
+  );
 }
 
 export function text(value: unknown): string | null {
@@ -114,6 +126,8 @@ export function assertUsage(inputTokens: number, outputTokens: number): void {
     outputTokens < 0 ||
     inputTokens + outputTokens === 0
   ) {
-    throw new AiProviderError('unavailable', false);
+    throw new AiProviderError('unavailable', false, undefined, undefined, {
+      reason: 'invalid_usage',
+    });
   }
 }

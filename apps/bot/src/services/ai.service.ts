@@ -7,6 +7,7 @@ import {
   aiHistoryKeyboard,
   aiHomeKeyboard,
 } from '../keyboards/ai.keyboard.js';
+import { currentBotCorrelationId, recordBotPerformance } from '../observability/performance.js';
 import { editOrReply } from './navigation.service.js';
 
 function credits(value: number): string {
@@ -40,7 +41,7 @@ async function deleteControllerMessage(
     } catch {
       console.warn('Telegram AI controller cleanup failed', {
         messageId,
-        telegramUserId: context.from?.id,
+        correlationId: currentBotCorrelationId(),
       });
     }
   }
@@ -61,7 +62,7 @@ async function detachController(
   } catch {
     console.warn('Telegram AI controller state cleanup failed', {
       messageId,
-      telegramUserId: context.from?.id,
+      correlationId: currentBotCorrelationId(),
     });
   }
 }
@@ -84,7 +85,7 @@ async function publishController(context: YuristimBotContext, language: Language
     if (!persisted) await deleteControllerMessage(context, message.message_id);
   } catch {
     console.warn('Telegram AI controller publish failed', {
-      telegramUserId: context.from?.id,
+      correlationId: currentBotCorrelationId(),
     });
   }
 }
@@ -104,7 +105,7 @@ async function sendStatusSticker(
     } catch {
       console.warn('Telegram AI status sticker send failed', {
         mode,
-        telegramUserId: context.from?.id,
+        correlationId: currentBotCorrelationId(),
       });
     }
   }
@@ -128,7 +129,7 @@ async function deleteStatusSticker(
   } catch {
     console.warn('Telegram AI status sticker cleanup failed', {
       messageId,
-      telegramUserId: context.from?.id,
+      correlationId: currentBotCorrelationId(),
     });
     return false;
   }
@@ -239,12 +240,30 @@ export async function sendAiPrompt(
         'aiCreditsCharged',
       )}: ${credits(result.message.chargedCredits)}`;
       const chunks = telegramChunks(answer);
+      let chunksSent = 0;
       try {
-        for (const chunk of chunks) await context.reply(chunk);
+        for (const chunk of chunks) {
+          await context.reply(chunk);
+          chunksSent += 1;
+        }
+        recordBotPerformance('ai_delivery', {
+          success: true,
+          chunksSent,
+          chunksTotal: chunks.length,
+        });
       } catch {
-        await context.yuristimApi
-          .reportAiDeliveryFailure(context.from!.id, result.message.id)
-          .catch(() => undefined);
+        recordBotPerformance('ai_delivery', {
+          success: false,
+          chunksSent,
+          chunksTotal: chunks.length,
+          errorCategory: 'telegram_send_error',
+        });
+        try {
+          await context.yuristimApi.reportAiDeliveryFailure(context.from!.id, result.message.id);
+          recordBotPerformance('ai_refund', { success: true });
+        } catch {
+          recordBotPerformance('ai_refund', { success: false, errorCategory: 'refund_failed' });
+        }
         await context.reply(t(language, 'apiError')).catch(() => undefined);
       }
     } catch (error) {

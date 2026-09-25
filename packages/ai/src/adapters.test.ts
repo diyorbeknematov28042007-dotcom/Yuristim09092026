@@ -149,3 +149,43 @@ describe('provider adapters', () => {
     },
   );
 });
+
+describe('B1 safe HTTP diagnostics', () => {
+  it.each([
+    [400, 'invalid_request'],
+    [401, 'configuration'],
+    [403, 'configuration'],
+    [404, 'invalid_request'],
+    [408, 'timeout'],
+    [409, 'unknown'],
+    [429, 'rate_limit'],
+    [500, 'unavailable'],
+    [502, 'unavailable'],
+    [503, 'unavailable'],
+    [504, 'timeout'],
+  ])('retains HTTP %i without retaining the provider body', async (status, category) => {
+    const response = Response.json(
+      { error: { message: 'PRIVATE prompt and credential' } },
+      { status: Number(status), headers: { 'retry-after': '2' } },
+    );
+    await expect(assertProviderResponse(response)).rejects.toMatchObject({
+      category,
+      message: 'AI provider request failed',
+      diagnostics: { statusCode: Number(status), reason: 'http_error' },
+      ...(status === 429 ? { retryAfterMilliseconds: 2000 } : {}),
+    });
+  });
+
+  it('separates malformed Gemini output from an HTTP outage', async () => {
+    const adapter = new GeminiAdapter({
+      apiKey: 'test',
+      model: 'test',
+      thinkingLevel: 'low',
+      fetch: async () => new Response('not JSON'),
+    });
+    await expect(adapter.generate(request())).rejects.toMatchObject({
+      category: 'unavailable',
+      diagnostics: { reason: 'malformed_response' },
+    });
+  });
+});
