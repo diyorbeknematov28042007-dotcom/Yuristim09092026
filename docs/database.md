@@ -50,7 +50,7 @@ qiladi. Web va Bot database'ga bevosita business query yubormaydi.
 
 ```bash
 supabase db reset
-supabase test db
+supabase test db supabase/tests/database/*.test.sql
 supabase gen types typescript --local > packages/db/src/database.types.ts
 ```
 

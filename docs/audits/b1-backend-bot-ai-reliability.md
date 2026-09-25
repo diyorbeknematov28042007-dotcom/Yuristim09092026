@@ -159,7 +159,7 @@ Provider-attempt DB schema remains unchanged. New diagnostic detail is in struct
 - `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm format:check`, `git diff --check`: PASS locally.
 - Unit/integration count: 243 (AI 66, Bot 75, API 98, config 2, DB package 2).
 - Live rollback-only database smoke: PASS, 10 check groups plus in-flight conflict/replay and repeated refund assertions; fixture absence verified afterward.
-- Complete pgTAP suite: 7 files / 211 planned assertions; isolated CI job added using Supabase CLI 2.117.0. First CI attempt exposed invalid historical four-argument `has_check` calls and non-TAP smoke files being included by the test runner. Named CHECK assertions now query `pg_constraint`; the pgTAP job explicitly selects database test files, preserving all 211 assertions. Corrected CI status must be confirmed before merge.
+- Complete pgTAP suite: 7 files / 211 planned assertions; isolated CI job added using Supabase CLI 2.117.0. First CI attempt exposed invalid historical four-argument `has_check` calls and non-TAP smoke files being included by the test runner. Named CHECK assertions now query `pg_constraint`; the pgTAP job explicitly selects database test files, preserving all 211 assertions. Second CI ran all 211 assertions and exposed one stale global policy-count assertion (17 policies now exist, while the lawyer suite expected 9 globally). The assertion is now scoped to all nine lawyer/admin tables and verifies false USING/WITH CHECK predicates. Corrected CI status must be confirmed before merge.
 - Local Docker/Postgres unavailable; package installation hit OS privilege restrictions. No sandbox/security workaround attempted.
 
 ## Real production smoke and acceptance

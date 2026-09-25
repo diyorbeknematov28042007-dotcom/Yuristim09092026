@@ -115,7 +115,7 @@ Database migration va local pgTAP test:
 
 ```bash
 supabase db reset
-supabase test db
+supabase test db supabase/tests/database/*.test.sql
 ```
 
 ## App'lar

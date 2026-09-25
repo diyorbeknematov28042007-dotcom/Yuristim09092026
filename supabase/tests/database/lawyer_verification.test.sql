@@ -30,7 +30,13 @@ select is((select relrowsecurity from pg_class where oid = 'public.lawyer_profil
 select is((select relforcerowsecurity from pg_class where oid = 'public.lawyer_profiles'::regclass), true, 'lawyer profile RLS forced');
 select is((select relrowsecurity from pg_class where oid = 'public.lawyer_verifications'::regclass), true, 'verification RLS enabled');
 select is((select relforcerowsecurity from pg_class where oid = 'public.admin_accounts'::regclass), true, 'admin account RLS forced');
-select is((select count(*)::integer from pg_policies where schemaname = 'public' and policyname like '%_deny_client_access'), 9, 'explicit client deny policies exist');
+select is((select count(distinct tablename)::integer from pg_policies
+  where schemaname = 'public' and policyname like '%_deny_client_access'
+    and tablename in ('lawyer_profiles', 'specializations', 'lawyer_specializations',
+      'lawyer_verifications', 'verification_documents', 'admin_accounts',
+      'admin_sessions', 'audit_logs', 'admin_login_logs')
+    and qual = 'false' and with_check = 'false'
+), 9, 'all nine lawyer/admin tables explicitly deny client access');
 select ok(not has_function_privilege('anon', 'public.review_lawyer_verification(uuid,uuid,text,text)', 'EXECUTE'), 'anon cannot review verifications');
 select ok(has_function_privilege('service_role', 'public.review_lawyer_verification(uuid,uuid,text,text)', 'EXECUTE'), 'service role can review verifications');
 
