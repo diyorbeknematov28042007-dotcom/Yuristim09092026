@@ -31,6 +31,15 @@ async function start(): Promise<void> {
       token: env.TELEGRAM_BOT_TOKEN,
     });
 
+    console.info(
+      JSON.stringify({
+        event: 'bot_runtime_configuration',
+        apiHost: new URL(env.API_BASE_URL).host,
+        apiTimeoutMilliseconds: env.API_TIMEOUT_MILLISECONDS,
+        aiApiTimeoutMilliseconds: env.AI_API_TIMEOUT_MILLISECONDS,
+        concurrency: 16,
+      }),
+    );
     await bot.init();
     const runner = startBotRunner(bot);
     let stopping = false;

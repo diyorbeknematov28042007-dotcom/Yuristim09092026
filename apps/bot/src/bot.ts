@@ -14,6 +14,7 @@ import {
   withBotPerformance,
 } from './observability/performance.js';
 import { orderedUpdates } from './runner.js';
+import { acknowledgeCallback } from './middleware/callback-ack.js';
 
 export interface YuristimBotContext extends Context {
   botConfig: BotRuntimeConfig;
@@ -121,6 +122,7 @@ export function createBot(options: CreateBotOptions): Bot<YuristimBotContext> {
       }
     });
   });
+  bot.use(acknowledgeCallback());
   bot.use(orderedUpdates());
   bot.use(safeErrorHandler());
   bot.use(apiContext(api));

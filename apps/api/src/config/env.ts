@@ -99,6 +99,7 @@ const apiEnvSchema = z
       .min(5_000)
       .max(120_000)
       .default(45_000),
+    AI_GATEWAY_TIMEOUT_MILLISECONDS: z.coerce.number().int().min(5_000).max(90_000).default(90_000),
     AI_PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(2).default(1),
     AI_FAST_CONTEXT_TOKENS: z.coerce.number().int().min(4_096).max(262_144).default(32_768),
     AI_EXPERT_CONTEXT_TOKENS: z.coerce.number().int().min(4_096).max(262_144).default(65_536),

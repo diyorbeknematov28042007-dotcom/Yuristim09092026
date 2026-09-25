@@ -27,7 +27,10 @@ export function registerErrorHandler(app: FastifyInstance): void {
     const message = knownError ? error.message : 'Internal server error';
 
     if (statusCode >= 500) {
-      request.log.error({ err: error }, 'Request failed');
+      request.log.error(
+        { code, statusCode, errorType: knownError ? 'AppError' : 'InternalError' },
+        'Request failed',
+      );
     } else {
       request.log.warn({ code, statusCode }, 'Request rejected');
     }

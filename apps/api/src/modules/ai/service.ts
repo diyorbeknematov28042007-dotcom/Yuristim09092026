@@ -55,6 +55,8 @@ export interface AiTelemetry {
   outputTokens?: number;
   chargedCredits?: number;
   errorCategory?: string;
+  statusCode?: number;
+  errorReason?: string;
 }
 
 export interface AiPerformanceMetric {
@@ -64,9 +66,15 @@ export interface AiPerformanceMetric {
     | 'provider_first_response'
     | 'provider_complete'
     | 'credit_finalize'
-    | 'ai_finalize';
+    | 'ai_finalize'
+    | 'ai_dependency_failure';
   durationMilliseconds: number;
   attemptNumber?: number;
+  provider?: string;
+  operation?: string;
+  errorCategory?: string;
+  statusCode?: number;
+  errorReason?: string;
   status?: 'succeeded' | 'failed' | 'interrupted';
   success?: boolean;
 }
@@ -412,6 +420,7 @@ export class AiService {
     }
 
     let assistantMessage: AiMessageRow | undefined;
+    let ownsMessage = false;
     try {
       const begun = await this.repository.beginMessage({
         content: input.content,
@@ -442,6 +451,7 @@ export class AiService {
         throw new AppError(409, 'AI_CONVERSATION_BUSY', 'AI request is already processing');
       }
 
+      ownsMessage = true;
       const messages = await this.repository.listMessages(conversation.id);
       const context = buildConversationContext(
         this.contextHistory(messages, assistantMessage.id),
@@ -459,12 +469,23 @@ export class AiService {
       const generated = await this.gateway.execute({
         messages: context.messages,
         mode,
+        onDiagnostic: (event) =>
+          input.performance?.({
+            ...event,
+            event: 'ai_dependency_failure',
+            durationMilliseconds: 0,
+            success: false,
+          }),
         onAttempt: async (event) => {
           input.performance?.({
             attemptNumber: event.attemptNumber,
             durationMilliseconds: event.latencyMilliseconds,
             event: 'provider_complete',
             status: event.status,
+            provider: event.provider,
+            ...(event.statusCode === undefined ? {} : { statusCode: event.statusCode }),
+            ...(event.errorReason ? { errorReason: event.errorReason } : {}),
+            ...(event.errorCategory ? { errorCategory: event.errorCategory } : {}),
           });
           await this.repository.recordProviderAttempt({
             ...event,
@@ -540,6 +561,7 @@ export class AiService {
       const finalizeStartedAt = Date.now();
       const category = error instanceof AiProviderError ? error.category : 'unknown';
       if (
+        ownsMessage &&
         assistantMessage &&
         !['completed', 'failed', 'cancelled'].includes(assistantMessage.status)
       ) {
@@ -562,6 +584,12 @@ export class AiService {
         conversationId: conversation.id,
         durationMilliseconds: Date.now() - startedAt,
         errorCategory: category,
+        ...(error instanceof AiProviderError && error.diagnostics.statusCode !== undefined
+          ? { statusCode: error.diagnostics.statusCode }
+          : {}),
+        ...(error instanceof AiProviderError && error.diagnostics.reason
+          ? { errorReason: error.diagnostics.reason }
+          : {}),
         model: config.model,
         provider: config.provider,
         requestId: input.requestId,

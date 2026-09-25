@@ -1,6 +1,7 @@
 import {
   AiProviderError,
   type AiCircuitBreakerConfig,
+  type AiDependencyDiagnostic,
   type AiExecutionRequest,
   type AiExecutionResult,
   type AiExpertProviderName,
@@ -20,6 +21,7 @@ interface AiGatewayOptions {
   adapters: AiProviderAdapter[];
   models: AiModelConfig[];
   timeoutMilliseconds: number;
+  totalTimeoutMilliseconds?: number;
   maxRetries: number;
   expertRouting?: AiExpertRoutingConfig | undefined;
   circuitBreaker: AiCircuitBreakerConfig;
@@ -73,7 +75,10 @@ function normalizedError(
   if (external?.aborted) return new AiProviderError('cancelled', false);
   if (signal.timedOut()) return new AiProviderError('timeout', true);
   if (error instanceof AiProviderError) return error;
-  if (error instanceof TypeError) return new AiProviderError('unavailable', true);
+  if (error instanceof TypeError)
+    return new AiProviderError('unavailable', true, undefined, undefined, {
+      reason: 'network_error',
+    });
   return new AiProviderError('unknown', false);
 }
 
@@ -153,6 +158,27 @@ export class AiGateway {
     return config;
   }
 
+  runtimeSummary() {
+    return {
+      timeoutMilliseconds: this.options.timeoutMilliseconds,
+      totalTimeoutMilliseconds: this.options.totalTimeoutMilliseconds ?? 90_000,
+      maxRetries: this.options.maxRetries,
+      expertRouting: this.expertRouting,
+      circuitBreaker: this.options.circuitBreaker,
+      providers: [...this.models.values()].map(
+        ({ provider, mode, model, enabled, maxOutputTokens, contextLimit }) => ({
+          provider,
+          mode,
+          model,
+          enabled,
+          maxOutputTokens,
+          contextLimit,
+          configured: Boolean(this.adapters.get(provider)?.configured),
+        }),
+      ),
+    };
+  }
+
   async availability(): Promise<Record<AiMode, boolean>> {
     const statuses = await this.providerStatus();
     const expertProviders =
@@ -194,13 +220,42 @@ export class AiGateway {
   }
 
   async execute(request: AiExecutionRequest): Promise<AiExecutionResult> {
+    const total = this.options.totalTimeoutMilliseconds ?? 90_000;
+    const budget = attemptSignal(request.signal, total);
+    try {
+      const result = await this.executeWithinBudget(
+        { ...request, signal: budget.signal },
+        Date.now() + total,
+      );
+      if (budget.timedOut())
+        throw new AiProviderError('timeout', true, undefined, undefined, {
+          reason: 'request_budget',
+        });
+      return result;
+    } catch (error) {
+      if (budget.timedOut() && !request.signal?.aborted) {
+        throw new AiProviderError('timeout', true, undefined, undefined, {
+          reason: 'request_budget',
+        });
+      }
+      throw error;
+    } finally {
+      budget.cleanup();
+    }
+  }
+
+  private async executeWithinBudget(
+    request: AiExecutionRequest,
+    deadline: number,
+  ): Promise<AiExecutionResult> {
     const configs = request.mode === 'fast' ? [this.fastModel] : this.expertConfigs();
     const autoFailover = request.mode === 'expert' && this.expertRouting.mode === 'auto';
     let lastError: AiProviderError | undefined;
     let attemptNumber = 0;
     let emitted = false;
 
-    for (const config of configs) {
+    for (const [configIndex, config] of configs.entries()) {
+      if (request.signal?.aborted) throw new AiProviderError('cancelled', false);
       const adapter = this.adapters.get(config.provider);
       if (!config.enabled || !adapter?.configured) {
         lastError = new AiProviderError('configuration', false);
@@ -221,10 +276,16 @@ export class AiGateway {
           provider: config.provider,
         });
       } catch {
-        throw new AiProviderError('unknown', false);
+        this.diagnose(request, { operation: 'acquire_provider', provider: config.provider });
+        // Fail closed for this provider. Another provider still requires its own admission.
+        lastError = new AiProviderError('unknown', false);
+        if (autoFailover) continue;
+        throw lastError;
       }
       if (!acquired.allowed) {
-        lastError = new AiProviderError('unavailable', false);
+        lastError = new AiProviderError('unavailable', false, undefined, undefined, {
+          reason: 'circuit_open',
+        });
         if (autoFailover) continue;
         throw lastError;
       }
@@ -233,7 +294,16 @@ export class AiGateway {
       for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
         attemptNumber += 1;
         const startedAt = this.now();
-        const signal = attemptSignal(request.signal, this.options.timeoutMilliseconds);
+        if (request.signal?.aborted) throw new AiProviderError('cancelled', false);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0)
+          throw new AiProviderError('timeout', true, undefined, undefined, {
+            reason: 'request_budget',
+          });
+        const signal = attemptSignal(
+          request.signal,
+          Math.min(this.options.timeoutMilliseconds, remaining),
+        );
         let response: AiProviderResponse | undefined;
         try {
           const providerRequest = {
@@ -275,7 +345,11 @@ export class AiGateway {
               provider: config.provider,
             });
           } catch {
-            throw new AiProviderError('unknown', false);
+            this.diagnose(request, {
+              operation: 'record_success',
+              provider: config.provider,
+              attemptNumber,
+            });
           }
           return { ...response, config };
         }
@@ -284,6 +358,8 @@ export class AiGateway {
           attemptNumber,
           completedAt,
           errorCategory: providerError.category,
+          statusCode: providerError.diagnostics.statusCode,
+          errorReason: providerError.diagnostics.reason,
           latencyMilliseconds: completedAt.getTime() - startedAt.getTime(),
           model: config.model,
           provider: config.provider,
@@ -293,12 +369,19 @@ export class AiGateway {
         if (
           emitted ||
           !sameProviderRetryAllowed(providerError) ||
+          (autoFailover &&
+            configs
+              .slice(configIndex + 1)
+              .some(
+                (candidate) =>
+                  candidate.enabled && this.adapters.get(candidate.provider)?.configured,
+              )) ||
           attempt >= this.options.maxRetries ||
           request.signal?.aborted
         ) {
           break;
         }
-        await this.wait(100 * (attempt + 1));
+        await this.wait(Math.min(100 * (attempt + 1), Math.max(0, deadline - Date.now())));
       }
 
       lastError = providerError ?? new AiProviderError('unknown', false);
@@ -317,7 +400,11 @@ export class AiGateway {
               : { retryAfterSeconds: Math.ceil(lastError.retryAfterMilliseconds / 1_000) }),
           });
         } catch {
-          throw new AiProviderError('unknown', false);
+          this.diagnose(request, {
+            operation: 'record_failure',
+            provider: config.provider,
+            attemptNumber,
+          });
         }
       }
       if (!autoFailover || emitted || !failoverAllowed(lastError.category)) throw lastError;
@@ -346,7 +433,19 @@ export class AiGateway {
     try {
       await request.onAttempt(event);
     } catch {
-      throw new AiProviderError('unknown', false);
+      this.diagnose(request, {
+        operation: 'record_attempt',
+        provider: event.provider,
+        attemptNumber: event.attemptNumber,
+      });
+    }
+  }
+
+  private diagnose(request: AiExecutionRequest, event: AiDependencyDiagnostic): void {
+    try {
+      request.onDiagnostic?.(event);
+    } catch {
+      // Diagnostics cannot turn a completed provider response into a failed request.
     }
   }
 }

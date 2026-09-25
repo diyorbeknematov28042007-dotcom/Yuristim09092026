@@ -70,6 +70,8 @@ const app = buildApp({
   },
 });
 
+app.log.info({ ai: aiService.gateway.runtimeSummary() }, 'AI runtime configuration');
+
 let weeklyCreditTimer: NodeJS.Timeout | undefined;
 
 async function runWeeklyCreditGrant(): Promise<void> {

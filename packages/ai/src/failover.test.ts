@@ -59,6 +59,9 @@ function gateway(input: {
   enabled?: Partial<Record<AiExpertProviderName, boolean>>;
   stateStore?: InMemoryAiProviderStateStore;
   now?: () => Date;
+  maxRetries?: number;
+  timeoutMilliseconds?: number;
+  totalTimeoutMilliseconds?: number;
 }) {
   return new AiGateway({
     adapters: input.adapters,
@@ -68,7 +71,7 @@ function gateway(input: {
       mode: input.mode ?? 'auto',
       order: ['bai', 'openai', 'anthropic'],
     },
-    maxRetries: 0,
+    maxRetries: input.maxRetries ?? 0,
     models: [
       model('fast', 'gemini'),
       model('expert', 'bai', input.enabled?.bai ?? true),
@@ -77,7 +80,10 @@ function gateway(input: {
     ],
     ...(input.now ? { now: input.now } : {}),
     providerStateStore: input.stateStore ?? new InMemoryAiProviderStateStore(),
-    timeoutMilliseconds: 100,
+    timeoutMilliseconds: input.timeoutMilliseconds ?? 100,
+    ...(input.totalTimeoutMilliseconds
+      ? { totalTimeoutMilliseconds: input.totalTimeoutMilliseconds }
+      : {}),
   });
 }
 
@@ -335,5 +341,179 @@ describe('provider circuit breaker', () => {
       circuitState: 'ACTIVE',
       consecutiveFailures: 0,
     });
+  });
+});
+
+describe('B1 gateway dependency failures', () => {
+  it('keeps a successful answer when recording provider success fails', async () => {
+    const stateStore = new InMemoryAiProviderStateStore();
+    vi.spyOn(stateStore, 'recordProviderSuccess').mockRejectedValue(new Error('DB transient'));
+    const generate = vi.fn().mockResolvedValue(success('answer'));
+    await expect(
+      gateway({ adapters: [adapter('bai', generate)], stateStore }).execute(expertRequest),
+    ).resolves.toMatchObject({ content: 'answer' });
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it('continues Expert failover when failure-state persistence fails', async () => {
+    const stateStore = new InMemoryAiProviderStateStore();
+    vi.spyOn(stateStore, 'recordProviderFailure').mockRejectedValue(new Error('DB transient'));
+    const bai = vi.fn().mockRejectedValue(new AiProviderError('unavailable', false));
+    const openai = vi.fn().mockResolvedValue(success('fallback'));
+    await expect(
+      gateway({ adapters: [adapter('bai', bai), adapter('openai', openai)], stateStore }).execute(
+        expertRequest,
+      ),
+    ).resolves.toMatchObject({ content: 'fallback' });
+  });
+
+  it('never calls a provider whose shared admission check fails', async () => {
+    const stateStore = new InMemoryAiProviderStateStore();
+    const acquire = stateStore.acquireProvider.bind(stateStore);
+    vi.spyOn(stateStore, 'acquireProvider').mockImplementation((input) =>
+      input.provider === 'bai' ? Promise.reject(new Error('DB transient')) : acquire(input),
+    );
+    const bai = vi.fn();
+    const openai = vi.fn().mockResolvedValue(success('fallback'));
+    await expect(
+      gateway({ adapters: [adapter('bai', bai), adapter('openai', openai)], stateStore }).execute(
+        expertRequest,
+      ),
+    ).resolves.toMatchObject({ content: 'fallback' });
+    expect(bai).not.toHaveBeenCalled();
+  });
+});
+
+describe('B1 controlled concurrency and circuit probes', () => {
+  it.each([1, 5, 16, 32])(
+    'handles %i independent mocked AI requests without loss',
+    async (count) => {
+      let active = 0;
+      let peak = 0;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const generate = vi.fn(async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await gate;
+        active -= 1;
+        return success('answer');
+      });
+      const ai = gateway({ adapters: [adapter('gemini', generate)] });
+      const requests = Array.from({ length: count }, () =>
+        ai.execute({ ...expertRequest, mode: 'fast' }),
+      );
+      await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(count));
+      release();
+      const results = await Promise.all(requests);
+      expect(results).toHaveLength(count);
+      expect(peak).toBe(count);
+      expect(results.every((result) => result.config.provider === 'gemini')).toBe(true);
+    },
+  );
+
+  it('allows only one half-open probe across two gateway instances sharing state', async () => {
+    const stateStore = new InMemoryAiProviderStateStore();
+    const now = new Date('2026-09-25T00:00:00Z');
+    await stateStore.recordProviderFailure({
+      provider: 'gemini',
+      category: 'unavailable',
+      now,
+      baseCooldownSeconds: 300,
+      failureThreshold: 1,
+      failureWindowSeconds: 120,
+      maxCooldownSeconds: 1800,
+    });
+    const probeTime = () => new Date(now.getTime() + 301_000);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const generate = vi.fn(async () => {
+      await gate;
+      return success('probe');
+    });
+    const options = { adapters: [adapter('gemini', generate)], stateStore, now: probeTime };
+    const first = gateway(options).execute({ ...expertRequest, mode: 'fast' });
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledOnce());
+    await expect(
+      gateway(options).execute({ ...expertRequest, mode: 'fast' }),
+    ).rejects.toMatchObject({ category: 'unavailable' });
+    release();
+    await first;
+    expect((await stateStore.getProviderState('gemini'))?.circuitState).toBe('ACTIVE');
+  });
+
+  it('reports dropped attempt telemetry without losing the provider result', async () => {
+    const onDiagnostic = vi.fn();
+    const result = await gateway({
+      adapters: [adapter('bai', async () => success('answer'))],
+    }).execute({
+      ...expertRequest,
+      onAttempt: () => {
+        throw new Error('private DB error');
+      },
+      onDiagnostic,
+    });
+    expect(result.content).toBe('answer');
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      operation: 'record_attempt',
+      provider: 'bai',
+      attemptNumber: 1,
+    });
+    expect(JSON.stringify(onDiagnostic.mock.calls)).not.toContain('private DB error');
+  });
+});
+
+describe('B1 request time budgets', () => {
+  it('bounds all Fast retries by one total provider budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const generate = vi.fn(
+        (request) =>
+          new Promise<never>((_resolve, reject) => {
+            request.signal.addEventListener('abort', () => reject(new Error('abort')), {
+              once: true,
+            });
+          }),
+      );
+      const ai = gateway({
+        adapters: [adapter('gemini', generate)],
+        maxRetries: 2,
+        timeoutMilliseconds: 40,
+        totalTimeoutMilliseconds: 50,
+      });
+      let settled = false;
+      const pending = ai.execute({ ...expertRequest, mode: 'fast' }).catch((error) => {
+        settled = true;
+        return error;
+      });
+      await vi.advanceTimersByTimeAsync(55);
+      // Backoff is bounded by the remaining request budget as well.
+      const withinBudget = settled;
+      await vi.advanceTimersByTimeAsync(1000);
+      const error = await pending;
+      expect(withinBudget).toBe(true);
+      expect(error).toMatchObject({
+        category: 'timeout',
+        diagnostics: { reason: 'request_budget' },
+      });
+      expect(generate).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('spends the next Expert attempt on a healthy fallback before repeating a failed provider', async () => {
+    const bai = vi.fn().mockRejectedValue(new AiProviderError('unavailable', true));
+    const openai = vi.fn().mockResolvedValue(success('fallback'));
+    const result = await gateway({
+      adapters: [adapter('bai', bai), adapter('openai', openai)],
+      maxRetries: 1,
+    }).execute(expertRequest);
+    expect(result.content).toBe('fallback');
+    expect(bai).toHaveBeenCalledOnce();
   });
 });

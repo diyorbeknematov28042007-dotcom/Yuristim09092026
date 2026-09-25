@@ -377,6 +377,58 @@ describe('AiService conversation and charging lifecycle', () => {
     });
   });
 
+  it('does not let an in-flight replay fail the original request', async () => {
+    const { generate, repository, service } = fixture();
+    const conversation = await service.createConversation(userA, 'uz');
+    let release!: (value: unknown) => void;
+    generate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const input = {
+      content: 'Question',
+      conversationId: conversation.id,
+      idempotencyKey: 'concurrent-replay',
+      language: 'uz' as const,
+      requestId: 'original',
+      userId: userA,
+    };
+    const original = service.send(input);
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledOnce());
+    const fail = vi.spyOn(repository, 'failMessage');
+    await expect(service.send({ ...input, requestId: 'replay' })).rejects.toMatchObject({
+      code: 'AI_CONVERSATION_BUSY',
+    });
+    const stillRunning = repository.messages.find((row) => row.role === 'assistant')?.status;
+    release({ content: 'Answer', usage: { inputTokens: 10, outputTokens: 10 } });
+    await original;
+    expect(stillRunning).toBe('running');
+    expect(fail).not.toHaveBeenCalled();
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it('completes and charges once even if attempt persistence is unavailable', async () => {
+    const { generate, repository, service } = fixture();
+    const conversation = await service.createConversation(userA, 'uz');
+    vi.spyOn(repository, 'recordProviderAttempt').mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    const complete = vi.spyOn(repository, 'completeMessage');
+    const result = await service.send({
+      content: 'Question',
+      conversationId: conversation.id,
+      idempotencyKey: 'telemetry-failure',
+      language: 'uz',
+      requestId: 'telemetry',
+      userId: userA,
+    });
+    expect(result.message.status).toBe('completed');
+    expect(complete).toHaveBeenCalledOnce();
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
   it('persists a successful answer, usage charge, and deterministic title', async () => {
     const { repository, service } = fixture();
     const conversation = await service.createConversation(userA, 'uz');

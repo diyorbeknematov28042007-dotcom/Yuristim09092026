@@ -7,6 +7,10 @@ export function registerRequestContext(app: FastifyInstance): void {
   app.addHook('onRequest', async (request, reply) => {
     requestStartedAt.set(request, performance.now());
     reply.header('x-request-id', request.id);
+    logPerformance(request, 'api_request_received', 0, {
+      method: request.method,
+      route: request.routeOptions.url,
+    });
   });
 
   app.addHook('onResponse', async (request, reply) => {

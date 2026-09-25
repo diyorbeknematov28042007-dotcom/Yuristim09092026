@@ -52,32 +52,7 @@ import { elapsedBotMilliseconds, recordBotPerformance } from '../observability/p
 export function registerCallbackHandler(composer: Composer<YuristimBotContext>): void {
   composer.on('callback_query:data', async (context) => {
     const callback = parseCallbackData(context.callbackQuery.data);
-    if (!callback || !context.from) {
-      let acknowledged = false;
-      try {
-        await context.answerCallbackQuery({
-          show_alert: true,
-          text: t(telegramLanguage(context.from?.language_code), 'invalidAction'),
-        });
-        acknowledged = true;
-      } finally {
-        recordBotPerformance('callback_ack', {
-          durationMilliseconds: elapsedBotMilliseconds(),
-          success: acknowledged,
-        });
-      }
-      return;
-    }
-    let acknowledged = false;
-    try {
-      await context.answerCallbackQuery();
-      acknowledged = true;
-    } finally {
-      recordBotPerformance('callback_ack', {
-        durationMilliseconds: elapsedBotMilliseconds(),
-        success: acknowledged,
-      });
-    }
+    if (!callback || !context.from) return;
     let data = await context.yuristimApi.getTelegramUserContext(context.from.id);
     recordBotPerformance('bot_context_ready', {
       durationMilliseconds: elapsedBotMilliseconds(),
