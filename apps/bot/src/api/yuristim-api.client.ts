@@ -44,7 +44,10 @@ export interface BotAiStatusView extends AiStatusView {
 
 export interface YuristimApi {
   ensureTelegramUser(identity: TelegramIdentity): Promise<EnsureUserResult>;
-  confirmTelegramLogin?(challenge: string, identity: TelegramIdentity): Promise<{ requestId: string }>;
+  confirmTelegramLogin?(
+    challenge: string,
+    identity: TelegramIdentity,
+  ): Promise<{ requestId: string }>;
   confirmFounding100(
     telegramUserId: number,
     token: string,
@@ -489,7 +492,10 @@ export class YuristimApiClient implements YuristimApi {
     return this.parse(ensureSchema, payload);
   }
 
-  async confirmTelegramLogin(challenge: string, identity: TelegramIdentity): Promise<{ requestId: string }> {
+  async confirmTelegramLogin(
+    challenge: string,
+    identity: TelegramIdentity,
+  ): Promise<{ requestId: string }> {
     return this.parse(
       z.object({ requestId: z.string().uuid() }),
       await this.request('POST', '/internal/telegram/auth/confirm', { challenge, identity }),

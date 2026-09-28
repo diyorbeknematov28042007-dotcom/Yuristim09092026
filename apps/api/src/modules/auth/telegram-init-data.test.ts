@@ -8,8 +8,15 @@ const token = '123456:telegram-test-token';
 const identity = { id: 280420070, first_name: 'Diyorbek', username: 'diyorbek' };
 
 function signedData(user: object, authDate = Math.floor(Date.now() / 1000)) {
-  const fields = new URLSearchParams({ auth_date: String(authDate), query_id: 'AA_TEST', user: JSON.stringify(user) });
-  const data = [...fields.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([a, b]) => `${a}=${b}`).join('\n');
+  const fields = new URLSearchParams({
+    auth_date: String(authDate),
+    query_id: 'AA_TEST',
+    user: JSON.stringify(user),
+  });
+  const data = [...fields.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([a, b]) => `${a}=${b}`)
+    .join('\n');
   const secret = createHmac('sha256', 'WebAppData').update(token).digest();
   fields.set('hash', createHmac('sha256', secret).update(data).digest('hex'));
   return fields.toString();
@@ -23,23 +30,53 @@ describe('Telegram Mini App unified identity', () => {
       sessionSecret: 'test-session-secret-that-is-at-least-32-characters',
       sessionTtlSeconds: 3600,
     });
-    const bot = await service.ensureTelegramUser({ telegramUserId: identity.id, telegramFirstName: identity.first_name, telegramUsername: identity.username });
-    const app = buildApp({ core: { internalBotSecret: 'test-internal-secret-that-is-at-least-32-characters', production: false, service, telegramBotToken: token }, logger: false });
+    const bot = await service.ensureTelegramUser({
+      telegramUserId: identity.id,
+      telegramFirstName: identity.first_name,
+      telegramUsername: identity.username,
+    });
+    const app = buildApp({
+      core: {
+        internalBotSecret: 'test-internal-secret-that-is-at-least-32-characters',
+        production: false,
+        service,
+        telegramBotToken: token,
+      },
+      logger: false,
+    });
     try {
-      const login = await app.inject({ method: 'POST', url: '/auth/telegram/miniapp', payload: { initData: signedData(identity) } });
+      const login = await app.inject({
+        method: 'POST',
+        url: '/auth/telegram/miniapp',
+        payload: { initData: signedData(identity) },
+      });
       expect(login.statusCode).toBe(200);
       expect(login.json().user.duid).toBe(bot.user.duid);
       expect(repository.users.size).toBe(1);
       const cookie = String(login.headers['set-cookie']).split(';', 1)[0]!;
       const me = await app.inject({ method: 'GET', url: '/users/me', headers: { cookie } });
       expect(me.json().user.telegramUserId).toBe(String(identity.id));
-      expect((await app.inject({ method: 'POST', url: '/auth/logout', headers: { cookie } })).statusCode).toBe(204);
-      expect((await app.inject({ method: 'GET', url: '/users/me', headers: { cookie } })).statusCode).toBe(401);
-      const invalid = await app.inject({ method: 'POST', url: '/auth/telegram/miniapp', payload: { initData: signedData({ ...identity, id: 42 }).replace('42', '43') } });
+      expect(
+        (await app.inject({ method: 'POST', url: '/auth/logout', headers: { cookie } })).statusCode,
+      ).toBe(204);
+      expect(
+        (await app.inject({ method: 'GET', url: '/users/me', headers: { cookie } })).statusCode,
+      ).toBe(401);
+      const invalid = await app.inject({
+        method: 'POST',
+        url: '/auth/telegram/miniapp',
+        payload: { initData: signedData({ ...identity, id: 42 }).replace('42', '43') },
+      });
       expect(invalid.statusCode).toBe(401);
-      const expired = await app.inject({ method: 'POST', url: '/auth/telegram/miniapp', payload: { initData: signedData(identity, Math.floor(Date.now() / 1000) - 86401) } });
+      const expired = await app.inject({
+        method: 'POST',
+        url: '/auth/telegram/miniapp',
+        payload: { initData: signedData(identity, Math.floor(Date.now() / 1000) - 86401) },
+      });
       expect(expired.statusCode).toBe(401);
       expect(repository.users.size).toBe(1);
-    } finally { await app.close(); }
+    } finally {
+      await app.close();
+    }
   });
 });

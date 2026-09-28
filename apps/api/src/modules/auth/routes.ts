@@ -19,14 +19,20 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   const { service } = options;
 
   app.post('/auth/telegram/miniapp', async (request, reply) => {
-    const body = parseInput(z.object({ initData: z.string().min(1).max(8192) }).strict(), request.body);
+    const body = parseInput(
+      z.object({ initData: z.string().min(1).max(8192) }).strict(),
+      request.body,
+    );
     if (!options.telegramBotToken) {
       throw new AppError(503, 'TELEGRAM_AUTH_UNAVAILABLE', 'Telegram sign in is unavailable');
     }
     const identity = verifyTelegramInitData(body.initData, options.telegramBotToken);
     const issued = await service.loginTelegramMiniApp(identity);
     setSessionCookie(reply, issued, options.production);
-    return reply.send({ expiresAt: issued.session.expires_at, user: service.toUserView(issued.user) });
+    return reply.send({
+      expiresAt: issued.session.expires_at,
+      user: service.toUserView(issued.user),
+    });
   });
 
   app.post('/auth/telegram/start', async (_request, reply) => {

@@ -41,12 +41,28 @@ export function registerStartHandler(composer: Composer<YuristimBotContext>): vo
     const loginChallenge = parseLoginStartParameter(context.match);
     if (loginChallenge) {
       try {
-        if (!context.yuristimApi.confirmTelegramLogin) throw new Error('Login confirmation unavailable');
-        await context.yuristimApi.confirmTelegramLogin(loginChallenge, telegramIdentity(context.from));
-        await context.reply(ensured.user.language === 'ru' ? 'Вход на сайт подтверждён.' : ensured.user.language === 'en' ? 'Website sign-in confirmed.' : 'Saytga kirish tasdiqlandi.');
+        if (!context.yuristimApi.confirmTelegramLogin)
+          throw new Error('Login confirmation unavailable');
+        await context.yuristimApi.confirmTelegramLogin(
+          loginChallenge,
+          telegramIdentity(context.from),
+        );
+        await context.reply(
+          ensured.user.language === 'ru'
+            ? 'Вход на сайт подтверждён.'
+            : ensured.user.language === 'en'
+              ? 'Website sign-in confirmed.'
+              : 'Saytga kirish tasdiqlandi.',
+        );
       } catch (error) {
         if (!(error instanceof YuristimApiError)) throw error;
-        await context.reply(ensured.user.language === 'ru' ? 'Ссылка устарела. Получите новую на сайте.' : ensured.user.language === 'en' ? 'This link expired. Request a new one on the website.' : 'Havola eskirgan. Saytdan yangi havola oling.');
+        await context.reply(
+          ensured.user.language === 'ru'
+            ? 'Ссылка устарела. Получите новую на сайте.'
+            : ensured.user.language === 'en'
+              ? 'This link expired. Request a new one on the website.'
+              : 'Havola eskirgan. Saytdan yangi havola oling.',
+        );
       }
       return;
     }
