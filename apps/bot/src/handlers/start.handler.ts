@@ -21,6 +21,11 @@ export function parseFounding100StartParameter(value: unknown): string | null {
   return match?.[1] ?? null;
 }
 
+export function parseLoginStartParameter(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return /^login_([A-Za-z0-9_-]{43})$/.exec(value.trim())?.[1] ?? null;
+}
+
 export function registerStartHandler(composer: Composer<YuristimBotContext>): void {
   composer.command('start', async (context) => {
     if (!context.from) return;
@@ -30,6 +35,19 @@ export function registerStartHandler(composer: Composer<YuristimBotContext>): vo
     });
     if (ensured.user.status === 'blocked') {
       await context.reply(t(ensured.user.language, 'blocked'));
+      return;
+    }
+
+    const loginChallenge = parseLoginStartParameter(context.match);
+    if (loginChallenge) {
+      try {
+        if (!context.yuristimApi.confirmTelegramLogin) throw new Error('Login confirmation unavailable');
+        await context.yuristimApi.confirmTelegramLogin(loginChallenge, telegramIdentity(context.from));
+        await context.reply(ensured.user.language === 'ru' ? 'Вход на сайт подтверждён.' : ensured.user.language === 'en' ? 'Website sign-in confirmed.' : 'Saytga kirish tasdiqlandi.');
+      } catch (error) {
+        if (!(error instanceof YuristimApiError)) throw error;
+        await context.reply(ensured.user.language === 'ru' ? 'Ссылка устарела. Получите новую на сайте.' : ensured.user.language === 'en' ? 'This link expired. Request a new one on the website.' : 'Havola eskirgan. Saytdan yangi havola oling.');
+      }
       return;
     }
 

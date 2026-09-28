@@ -32,6 +32,7 @@ export interface BuildAppOptions {
     internalBotSecret: string;
     production: boolean;
     service: CoreAuthService;
+    telegramBotToken?: string | undefined;
     lawyerService?: LawyerService;
     adminService?: AdminService;
     creditService?: CreditService;
@@ -76,6 +77,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       registerAuthRoutes(coreApp, {
         production: core.production,
         service: core.service,
+        telegramBotToken: core.telegramBotToken,
       });
       registerUserRoutes(coreApp, core.service);
       if (core.creditService) {
