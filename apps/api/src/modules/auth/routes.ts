@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { AppError } from '../../lib/errors.js';
+import { verifyTelegramInitData } from './telegram-init-data.js';
 import { authenticateRequest, parseInput, setSessionCookie, SESSION_COOKIE_NAME } from './http.js';
 import type { CoreAuthService } from './service.js';
 
@@ -10,10 +12,28 @@ const pinSchema = z.string().regex(/^\d{4}$/);
 export interface AuthRouteOptions {
   production: boolean;
   service: CoreAuthService;
+  telegramBotToken?: string | undefined;
 }
 
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptions): void {
   const { service } = options;
+
+  app.post('/auth/telegram/miniapp', async (request, reply) => {
+    const body = parseInput(
+      z.object({ initData: z.string().min(1).max(8192) }).strict(),
+      request.body,
+    );
+    if (!options.telegramBotToken) {
+      throw new AppError(503, 'TELEGRAM_AUTH_UNAVAILABLE', 'Telegram sign in is unavailable');
+    }
+    const identity = verifyTelegramInitData(body.initData, options.telegramBotToken);
+    const issued = await service.loginTelegramMiniApp(identity);
+    setSessionCookie(reply, issued, options.production);
+    return reply.send({
+      expiresAt: issued.session.expires_at,
+      user: service.toUserView(issued.user),
+    });
+  });
 
   app.post('/auth/telegram/start', async (_request, reply) => {
     const login = await service.startTelegramLogin();

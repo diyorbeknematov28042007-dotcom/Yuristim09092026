@@ -58,6 +58,7 @@ const app = buildApp({
     internalBotSecret: env.INTERNAL_BOT_API_SECRET,
     production: env.NODE_ENV === 'production',
     service: authService,
+    telegramBotToken: env.TELEGRAM_BOT_TOKEN,
     lawyerService,
     creditService,
     paymentService,

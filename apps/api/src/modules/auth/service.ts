@@ -103,6 +103,11 @@ export class CoreAuthService {
     throw new Error('Could not allocate a unique DUID');
   }
 
+  async loginTelegramMiniApp(identity: TelegramIdentityInput): Promise<IssuedSession> {
+    const { user } = await this.ensureTelegramUser(identity);
+    return this.issueSession(user);
+  }
+
   async startTelegramLogin(): Promise<{ challenge: string; expiresAt: string; requestId: string }> {
     const now = this.now();
     const challenge = generateOpaqueToken();
