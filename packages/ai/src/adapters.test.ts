@@ -41,14 +41,22 @@ describe('provider adapters', () => {
       candidates: [{ content: { parts: [{ text: 'Yarim javob' }] }, finishReason: 'MAX_TOKENS' }],
       usageMetadata: { candidatesTokenCount: 500, promptTokenCount: 11 },
     };
-    const adapter = new GeminiAdapter({ apiKey: 'test', fetch: vi.fn().mockResolvedValue(Response.json(chunk)),
-      model: 'gemini-test', thinkingLevel: 'low' });
-    await expect(adapter.generate(request())).rejects.toMatchObject({
-      category: 'unavailable', diagnostics: { reason: 'output_limit' },
+    const adapter = new GeminiAdapter({
+      apiKey: 'test',
+      fetch: vi.fn().mockResolvedValue(Response.json(chunk)),
+      model: 'gemini-test',
+      thinkingLevel: 'low',
     });
-    const streaming = new GeminiAdapter({ apiKey: 'test', fetch: vi.fn().mockResolvedValue(
-      new Response(`data: ${JSON.stringify(chunk)}\n\n`),
-    ), model: 'gemini-test', thinkingLevel: 'low' });
+    await expect(adapter.generate(request())).rejects.toMatchObject({
+      category: 'unavailable',
+      diagnostics: { reason: 'output_limit' },
+    });
+    const streaming = new GeminiAdapter({
+      apiKey: 'test',
+      fetch: vi.fn().mockResolvedValue(new Response(`data: ${JSON.stringify(chunk)}\n\n`)),
+      model: 'gemini-test',
+      thinkingLevel: 'low',
+    });
     const onDelta = vi.fn();
     await expect(streaming.stream(request(), onDelta)).rejects.toMatchObject({
       diagnostics: { reason: 'output_limit' },
@@ -80,10 +88,18 @@ describe('provider adapters', () => {
   });
 
   it('rejects an incomplete Expert response without exposing provider details', async () => {
-    const adapter = new OpenAiAdapter({ apiKey: 'test', fetch: vi.fn().mockResolvedValue(Response.json({
-      status: 'incomplete', output: [{ content: [{ text: 'Yarim javob' }] }],
-      usage: { input_tokens: 10, output_tokens: 500 },
-    })), model: 'test', reasoningEffort: 'high' });
+    const adapter = new OpenAiAdapter({
+      apiKey: 'test',
+      fetch: vi.fn().mockResolvedValue(
+        Response.json({
+          status: 'incomplete',
+          output: [{ content: [{ text: 'Yarim javob' }] }],
+          usage: { input_tokens: 10, output_tokens: 500 },
+        }),
+      ),
+      model: 'test',
+      reasoningEffort: 'high',
+    });
     await expect(adapter.generate(request())).rejects.toMatchObject({
       diagnostics: { reason: 'output_limit' },
     });

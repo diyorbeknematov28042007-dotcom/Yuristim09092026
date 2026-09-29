@@ -360,7 +360,12 @@ function fixture(options: { balance?: number; providerFailure?: AiProviderError 
       zeroBalance: balance === 0,
     }),
   } as unknown as CreditService;
-  return { credits, generate, repository, service: new AiService(repository, gateway, credits, () => now) };
+  return {
+    credits,
+    generate,
+    repository,
+    service: new AiService(repository, gateway, credits, () => now),
+  };
 }
 
 describe('AiService conversation and charging lifecycle', () => {
@@ -497,8 +502,9 @@ describe('AiService conversation and charging lifecycle', () => {
     expect(status).toMatchObject({ status: 'completed', message: { id: first.message.id } });
     expect(generate).toHaveBeenCalledOnce();
     expect(repository.messages.filter((row) => row.role === 'assistant')).toHaveLength(1);
-    await expect(service.requestStatus(userB, conversation.id, input.idempotencyKey, 'uz'))
-      .rejects.toMatchObject({ code: 'AI_CONVERSATION_NOT_FOUND' });
+    await expect(
+      service.requestStatus(userB, conversation.id, input.idempotencyKey, 'uz'),
+    ).rejects.toMatchObject({ code: 'AI_CONVERSATION_NOT_FOUND' });
   });
 
   it('marks provider failure with zero charge and returns a safe normalized error', async () => {

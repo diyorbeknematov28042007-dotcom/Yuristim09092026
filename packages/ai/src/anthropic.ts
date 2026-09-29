@@ -69,8 +69,12 @@ export class AnthropicAdapter implements AiProviderAdapter {
     let inputTokens = 0;
     let outputTokens = 0;
     for await (const event of readSseJson(response)) {
-      if (event.type === 'message_delta' && event.delta && typeof event.delta === 'object' &&
-        (event.delta as Record<string, unknown>).stop_reason === 'max_tokens') {
+      if (
+        event.type === 'message_delta' &&
+        event.delta &&
+        typeof event.delta === 'object' &&
+        (event.delta as Record<string, unknown>).stop_reason === 'max_tokens'
+      ) {
         throw new AiProviderError('unavailable', false, undefined, undefined, {
           reason: 'output_limit',
         });
