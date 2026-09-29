@@ -405,7 +405,7 @@ export class AiGateway {
           routes.push({ config, deferred: true });
           break;
         }
-        await this.wait(Math.min(100 * (attempt + 1), Math.max(0, deadline - Date.now())));
+        await this.wait(Math.min(500 * 2 ** attempt, 4_000, Math.max(0, deadline - Date.now())));
       }
 
       lastError = providerError ?? new AiProviderError('unknown', false);

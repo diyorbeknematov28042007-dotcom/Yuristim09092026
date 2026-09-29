@@ -360,7 +360,7 @@ function fixture(options: { balance?: number; providerFailure?: AiProviderError 
       zeroBalance: balance === 0,
     }),
   } as unknown as CreditService;
-  return { generate, repository, service: new AiService(repository, gateway, credits, () => now) };
+  return { credits, generate, repository, service: new AiService(repository, gateway, credits, () => now) };
 }
 
 describe('AiService conversation and charging lifecycle', () => {
@@ -476,6 +476,29 @@ describe('AiService conversation and charging lifecycle', () => {
     expect(duplicate.duplicate).toBe(true);
     expect(generate).toHaveBeenCalledOnce();
     expect(repository.messages.filter((row) => row.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('recovers a completed request even after the balance is depleted', async () => {
+    const { credits, generate, repository, service } = fixture();
+    const conversation = await service.createConversation(userA, 'uz');
+    const input = {
+      content: 'Bir martalik savol',
+      conversationId: conversation.id,
+      idempotencyKey: 'request-depleted-balance',
+      language: 'uz' as const,
+      requestId: 'first-request',
+      userId: userA,
+    };
+    const first = await service.send(input);
+    vi.spyOn(credits, 'getBalance').mockRejectedValue(new Error('balance unavailable'));
+    const recovered = await service.send({ ...input, requestId: 'reconnected' });
+    const status = await service.requestStatus(userA, conversation.id, input.idempotencyKey, 'uz');
+    expect(recovered).toMatchObject({ duplicate: true, message: { id: first.message.id } });
+    expect(status).toMatchObject({ status: 'completed', message: { id: first.message.id } });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(repository.messages.filter((row) => row.role === 'assistant')).toHaveLength(1);
+    await expect(service.requestStatus(userB, conversation.id, input.idempotencyKey, 'uz'))
+      .rejects.toMatchObject({ code: 'AI_CONVERSATION_NOT_FOUND' });
   });
 
   it('marks provider failure with zero charge and returns a safe normalized error', async () => {

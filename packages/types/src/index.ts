@@ -98,6 +98,7 @@ export type ApiErrorCode =
   | 'INSUFFICIENT_ACCEPT_BALANCE'
   | 'AI_CONVERSATION_NOT_FOUND'
   | 'AI_CONVERSATION_BUSY'
+  | 'AI_REQUEST_FAILED'
   | 'AI_PROVIDER_TIMEOUT'
   | 'AI_PROVIDER_RATE_LIMIT'
   | 'AI_PROVIDER_UNAVAILABLE'
@@ -422,6 +423,7 @@ export interface AiMessageView {
   sources: AiMessageSourceView[];
   createdAt: string;
   completedAt: string | null;
+  requestKey?: string;
 }
 
 export interface AiEstimateView {

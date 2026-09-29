@@ -48,6 +48,11 @@ export class AnthropicAdapter implements AiProviderAdapter {
       throw new AiProviderError('unavailable', false);
     }
     const record = value as Record<string, unknown>;
+    if (record.stop_reason === 'max_tokens') {
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'output_limit',
+      });
+    }
     const content = responseContent(record).trim();
     if (!content) throw new AiProviderError('unavailable', false);
     const usage = responseUsage(record);
@@ -64,6 +69,12 @@ export class AnthropicAdapter implements AiProviderAdapter {
     let inputTokens = 0;
     let outputTokens = 0;
     for await (const event of readSseJson(response)) {
+      if (event.type === 'message_delta' && event.delta && typeof event.delta === 'object' &&
+        (event.delta as Record<string, unknown>).stop_reason === 'max_tokens') {
+        throw new AiProviderError('unavailable', false, undefined, undefined, {
+          reason: 'output_limit',
+        });
+      }
       if (event.type === 'message_start' && event.message && typeof event.message === 'object') {
         inputTokens = responseUsage(event.message as Record<string, unknown>).inputTokens;
       }

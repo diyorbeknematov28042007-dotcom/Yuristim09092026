@@ -104,8 +104,8 @@ const apiEnvSchema = z
     AI_PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(2).default(1),
     AI_FAST_CONTEXT_TOKENS: z.coerce.number().int().min(4_096).max(262_144).default(32_768),
     AI_EXPERT_CONTEXT_TOKENS: z.coerce.number().int().min(4_096).max(262_144).default(65_536),
-    AI_FAST_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(16_384).default(2_048),
-    AI_EXPERT_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(32_768).default(4_096),
+    AI_FAST_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(16_384).default(4_096),
+    AI_EXPERT_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(32_768).default(8_192),
   })
   .refine(
     (value) => Boolean(value.ADMIN_BOOTSTRAP_USERNAME) === Boolean(value.ADMIN_BOOTSTRAP_PASSWORD),

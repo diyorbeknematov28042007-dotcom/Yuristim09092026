@@ -234,7 +234,6 @@ export async function sendAiPrompt(
         content,
         idempotencyKey,
       );
-      await cleanupStatusSticker();
       const answer = `${t(language, 'aiReady')}\n\n${telegramPlainText(result.message.content)}\n\n💳 ${t(
         language,
         'aiCreditsCharged',
@@ -245,6 +244,7 @@ export async function sendAiPrompt(
         for (const chunk of chunks) {
           await context.reply(chunk);
           chunksSent += 1;
+          if (chunksSent === 1) void cleanupStatusSticker();
         }
         recordBotPerformance('ai_delivery', {
           success: true,
@@ -267,8 +267,8 @@ export async function sendAiPrompt(
         await context.reply(t(language, 'apiError')).catch(() => undefined);
       }
     } catch (error) {
-      await cleanupStatusSticker();
       await context.reply(aiErrorText(language, error));
+      void cleanupStatusSticker();
     }
   } finally {
     await Promise.allSettled([controllerCleanup, cleanupStatusSticker()]);
@@ -300,12 +300,23 @@ export function telegramChunks(value: string, limit = 3_800): string[] {
   const chunks: string[] = [];
   let remaining = value;
   while (remaining.length > limit) {
-    let boundary = remaining.lastIndexOf('\n\n', limit);
-    if (boundary < Math.floor(limit * 0.5)) boundary = remaining.lastIndexOf('\n', limit);
-    if (boundary < Math.floor(limit * 0.5)) boundary = remaining.lastIndexOf(' ', limit);
-    if (boundary < 1) boundary = limit;
-    chunks.push(remaining.slice(0, boundary).trimEnd());
-    remaining = remaining.slice(boundary).trimStart();
+    let boundary = remaining.lastIndexOf('\n\n', limit - 2);
+    if (boundary >= Math.floor(limit * 0.5)) boundary += 2;
+    else {
+      boundary = remaining.lastIndexOf('\n', limit - 1);
+      if (boundary >= Math.floor(limit * 0.5)) boundary += 1;
+      else {
+        boundary = remaining.lastIndexOf(' ', limit - 1);
+        if (boundary >= Math.floor(limit * 0.5)) boundary += 1;
+      }
+    }
+    if (boundary < 1) {
+      boundary = limit;
+      // Telegram's character limit is UTF-16 based; never split a surrogate pair.
+      if (/^[\uD800-\uDBFF]$/.test(remaining.charAt(boundary - 1))) boundary -= 1;
+    }
+    chunks.push(remaining.slice(0, boundary));
+    remaining = remaining.slice(boundary);
   }
   if (remaining) chunks.push(remaining);
   return chunks;

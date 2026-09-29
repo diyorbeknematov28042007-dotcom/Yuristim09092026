@@ -48,6 +48,8 @@ export interface AiProviderDiagnostics {
     | 'malformed_response'
     | 'empty_response'
     | 'invalid_usage'
+    | 'output_limit'
+    | 'incomplete_response'
     | 'circuit_open'
     | 'request_budget'
     | undefined;
