@@ -118,7 +118,11 @@ function sourceView(row: AiMessageSourceRow): AiMessageSourceView {
   };
 }
 
-function messageView(row: AiMessageRow, sources: AiMessageSourceRow[]): AiMessageView {
+function messageView(
+  row: AiMessageRow,
+  sources: AiMessageSourceRow[],
+  requestKey?: string,
+): AiMessageView {
   const visibleContent = row.status === 'failed' || row.status === 'cancelled' ? '' : row.content;
   return {
     chargedCredits:
@@ -132,6 +136,7 @@ function messageView(row: AiMessageRow, sources: AiMessageSourceRow[]): AiMessag
     sourceStatus: row.source_status as AiMessageView['sourceStatus'],
     sources: sources.filter((source) => source.message_id === row.id).map(sourceView),
     status: row.status as AiMessageView['status'],
+    ...(requestKey ? { requestKey } : {}),
   };
 }
 
@@ -208,7 +213,43 @@ export class AiService {
     const sources = await this.repository.listSources(messages.map((message) => message.id));
     return {
       conversation: conversationView(conversation, language),
-      messages: messages.map((message) => messageView(message, sources)),
+      messages: messages.map((message) =>
+        messageView(
+          message,
+          sources,
+          messages.find((userMessage) => userMessage.id === message.request_message_id)
+            ?.idempotency_key ?? undefined,
+        ),
+      ),
+    };
+  }
+
+  async requestStatus(
+    userId: string,
+    publicId: string,
+    key: string,
+    language: Language,
+  ): Promise<{
+    status: 'missing' | 'processing' | 'failed' | 'completed';
+    message?: AiMessageView;
+    conversation?: AiConversationView;
+  }> {
+    const conversation = await this.ownedConversation(userId, publicId);
+    const messages = await this.repository.listMessages(conversation.id);
+    const userMessage = messages.find(
+      (message) => message.role === 'user' && message.idempotency_key === key,
+    );
+    if (!userMessage) return { status: 'missing' };
+    const assistant = messages.find((message) => message.request_message_id === userMessage.id);
+    if (!assistant || ['pending', 'running', 'streaming'].includes(assistant.status)) {
+      return { status: 'processing' };
+    }
+    if (assistant.status !== 'completed') return { status: 'failed' };
+    const sources = await this.repository.listSources([assistant.id]);
+    return {
+      status: 'completed',
+      message: messageView(assistant, sources, key),
+      conversation: conversationView(conversation, language),
     };
   }
 
@@ -397,14 +438,35 @@ export class AiService {
   async send(input: AiSendInput): Promise<AiSendResult> {
     const startedAt = Date.now();
     const conversation = await this.ownedConversation(input.userId, input.conversationId);
+    const contextReadsStartedAt = Date.now();
+    const existingMessages = await this.repository.listMessages(conversation.id);
+    const priorUserMessage = existingMessages.find(
+      (message) => message.role === 'user' && message.idempotency_key === input.idempotencyKey,
+    );
+    if (priorUserMessage) {
+      const priorAssistant = existingMessages.find(
+        (message) => message.request_message_id === priorUserMessage.id,
+      );
+      if (priorAssistant?.status === 'completed') {
+        const sources = await this.repository.listSources([priorAssistant.id]);
+        return {
+          conversation: conversationView(conversation, input.language),
+          duplicate: true,
+          message: messageView(priorAssistant, sources, input.idempotencyKey),
+        };
+      }
+      throw new AppError(
+        409,
+        priorAssistant?.status === 'failed' || priorAssistant?.status === 'cancelled'
+          ? 'AI_REQUEST_FAILED'
+          : 'AI_CONVERSATION_BUSY',
+        'AI request cannot be replayed yet',
+      );
+    }
     const mode = input.mode ?? (conversation.mode as AiMode);
     const config = this.gateway.config(mode);
     const systemPrompt = buildYuristimSystemPrompt(input.language);
-    const contextReadsStartedAt = Date.now();
-    const [existingMessages, balance] = await Promise.all([
-      this.repository.listMessages(conversation.id),
-      this.credits.getBalance(input.userId),
-    ]);
+    const balance = await this.credits.getBalance(input.userId);
     input.performance?.({
       durationMilliseconds: Date.now() - contextReadsStartedAt,
       event: 'database/context_reads',
@@ -445,7 +507,7 @@ export class AiService {
           return {
             conversation: conversationView(updatedConversation, input.language),
             duplicate: true,
-            message: messageView(assistantMessage, []),
+            message: messageView(assistantMessage, [], input.idempotencyKey),
           };
         }
         throw new AppError(409, 'AI_CONVERSATION_BUSY', 'AI request is already processing');
@@ -555,7 +617,7 @@ export class AiService {
       return {
         conversation: conversationView(updatedConversation, input.language),
         duplicate: false,
-        message: messageView(completed, []),
+        message: messageView(completed, [], input.idempotencyKey),
       };
     } catch (error) {
       const finalizeStartedAt = Date.now();

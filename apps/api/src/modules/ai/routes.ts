@@ -172,6 +172,20 @@ export function registerAiRoutes(
     return reply.status(result.duplicate ? 200 : 201).send(result);
   });
 
+  app.get('/ai/conversations/:conversationId/requests/:requestKey', async (request) => {
+    const { user } = await authenticateRequest(request, options.auth);
+    const params = parseInput(
+      z.object({ conversationId: conversationIdSchema, requestKey: idempotencySchema }).strict(),
+      request.params,
+    );
+    return options.ai.requestStatus(
+      user.id,
+      params.conversationId,
+      params.requestKey,
+      language(user.language),
+    );
+  });
+
   app.post('/ai/conversations/:conversationId/messages/stream', async (request, reply) => {
     const { user } = await authenticateRequest(request, options.auth);
     const params = parseInput(

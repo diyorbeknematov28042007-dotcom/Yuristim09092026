@@ -75,6 +75,11 @@ export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
       throw new AiProviderError('unavailable', false);
     }
     const record = value as Record<string, unknown>;
+    if (record.status === 'incomplete' || record.status === 'failed') {
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: record.status === 'incomplete' ? 'output_limit' : 'incomplete_response',
+      });
+    }
     const content = responseContent(record).trim();
     if (!content) throw new AiProviderError('unavailable', false);
     const usage = responseUsage(record);
@@ -90,6 +95,11 @@ export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
     let content = '';
     let usage = { inputTokens: 0, outputTokens: 0 };
     for await (const event of readSseJson(response)) {
+      if (event.type === 'response.incomplete' || event.type === 'response.failed') {
+        throw new AiProviderError('unavailable', false, undefined, undefined, {
+          reason: event.type === 'response.incomplete' ? 'output_limit' : 'incomplete_response',
+        });
+      }
       if (event.type === 'response.output_text.delta') {
         const delta = text(event.delta);
         if (delta) {

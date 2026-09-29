@@ -1060,7 +1060,8 @@ describe('Yuristim AI Telegram UX', () => {
       (call) => call.method === 'sendMessage' && String(call.payload.text).includes('Sinov AI'),
     );
     expect(stickerDeleteIndex).toBeGreaterThan(stickerIndex);
-    expect(stickerDeleteIndex).toBeLessThan(answerIndex);
+    expect(answerIndex).toBeGreaterThan(stickerIndex);
+    expect(stickerDeleteIndex).toBeGreaterThan(answerIndex);
   });
 
   it('keeps the status sticker until the AI request completes', async () => {
@@ -1257,7 +1258,15 @@ describe('Yuristim AI Telegram UX', () => {
     const chunks = telegramChunks(value);
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.length <= 3_800)).toBe(true);
-    expect(chunks.join(' ')).toBe(value);
+    expect(chunks.join('')).toBe(value);
+  });
+
+  it('keeps emoji intact when a long unbroken answer crosses a chunk boundary', () => {
+    const value = '😀'.repeat(2_001);
+    const chunks = telegramChunks(value, 3_801);
+    expect(chunks.every((chunk) => chunk.length <= 3_801)).toBe(true);
+    expect(chunks.join('')).toBe(value);
+    expect(chunks.every((chunk) => !/[\uD800-\uDBFF]$/.test(chunk))).toBe(true);
   });
 
   it('normalizes bold Markdown delimiters for Telegram plain text rendering', () => {

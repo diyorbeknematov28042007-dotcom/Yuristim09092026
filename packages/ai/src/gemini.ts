@@ -62,6 +62,18 @@ function parseChunk(value: Record<string, unknown>): {
   };
 }
 
+function assertFinished(value: Record<string, unknown>): void {
+  const candidates = Array.isArray(value.candidates) ? value.candidates : [];
+  const candidate = candidates[0];
+  if (!candidate || typeof candidate !== 'object') return;
+  const reason = (candidate as Record<string, unknown>).finishReason;
+  if (typeof reason === 'string' && reason !== 'STOP') {
+    throw new AiProviderError('unavailable', false, undefined, undefined, {
+      reason: reason === 'MAX_TOKENS' ? 'output_limit' : 'incomplete_response',
+    });
+  }
+}
+
 export class GeminiAdapter implements AiProviderAdapter {
   readonly name = 'gemini' as const;
   readonly supportsStreaming = true;
@@ -82,6 +94,7 @@ export class GeminiAdapter implements AiProviderAdapter {
       });
     }
     const parsed = parseChunk(value as Record<string, unknown>);
+    assertFinished(value as Record<string, unknown>);
     if (!parsed.content.trim())
       throw new AiProviderError('unavailable', false, undefined, undefined, {
         reason: 'empty_response',
@@ -109,6 +122,7 @@ export class GeminiAdapter implements AiProviderAdapter {
       }
       inputTokens = parsed.inputTokens || inputTokens;
       outputTokens = parsed.outputTokens || outputTokens;
+      assertFinished(value);
     }
     if (!content.trim())
       throw new AiProviderError('unavailable', false, undefined, undefined, {
