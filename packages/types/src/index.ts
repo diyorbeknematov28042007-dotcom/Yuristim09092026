@@ -412,6 +412,9 @@ export interface AiMessageSourceView {
   verified: boolean;
 }
 
+export * from './ai-diagnostics.js';
+import type { AiFailureDiagnostic } from './ai-diagnostics.js';
+
 export interface AiMessageView {
   id: string;
   role: 'user' | 'assistant';
@@ -424,6 +427,7 @@ export interface AiMessageView {
   createdAt: string;
   completedAt: string | null;
   requestKey?: string;
+  diagnostic?: AiFailureDiagnostic;
 }
 
 export interface AiEstimateView {

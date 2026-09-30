@@ -1,4 +1,4 @@
-import type { ApiErrorCode } from '@yuristim/types';
+import type { ApiErrorCode, AiFailureDiagnostic } from '@yuristim/types';
 import type { FastifyInstance } from 'fastify';
 
 export class AppError extends Error {
@@ -6,6 +6,7 @@ export class AppError extends Error {
     readonly statusCode: number,
     readonly code: ApiErrorCode,
     message: string,
+    readonly diagnostic?: AiFailureDiagnostic,
   ) {
     super(message);
     this.name = 'AppError';
@@ -28,7 +29,12 @@ export function registerErrorHandler(app: FastifyInstance): void {
 
     if (statusCode >= 500) {
       request.log.error(
-        { code, statusCode, errorType: knownError ? 'AppError' : 'InternalError' },
+        {
+          code,
+          statusCode,
+          errorType: knownError ? 'AppError' : 'InternalError',
+          ...(knownError && error.diagnostic ? { diagnostic: error.diagnostic } : {}),
+        },
         'Request failed',
       );
     } else {
@@ -36,7 +42,11 @@ export function registerErrorHandler(app: FastifyInstance): void {
     }
 
     return reply.status(statusCode).send({
-      error: { code, message },
+      error: {
+        code,
+        message,
+        ...(knownError && error.diagnostic ? { diagnostic: error.diagnostic } : {}),
+      },
       requestId: request.id,
     });
   });

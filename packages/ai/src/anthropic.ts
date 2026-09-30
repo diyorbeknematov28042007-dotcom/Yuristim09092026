@@ -68,7 +68,13 @@ export class AnthropicAdapter implements AiProviderAdapter {
     let content = '';
     let inputTokens = 0;
     let outputTokens = 0;
+    let finished = false;
     for await (const event of readSseJson(response)) {
+      if (event.type === 'message_stop') finished = true;
+      if (event.type === 'error')
+        throw new AiProviderError('unavailable', false, undefined, undefined, {
+          reason: 'incomplete_response',
+        });
       if (
         event.type === 'message_delta' &&
         event.delta &&
@@ -93,7 +99,14 @@ export class AnthropicAdapter implements AiProviderAdapter {
         outputTokens = number((event.usage as Record<string, unknown>).output_tokens);
       }
     }
-    if (!content.trim()) throw new AiProviderError('unavailable', false);
+    if (!finished)
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'missing_finish',
+      });
+    if (!content.trim())
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'empty_response',
+      });
     assertUsage(inputTokens, outputTokens);
     return { content: content.trim(), usage: { inputTokens, outputTokens } };
   }

@@ -1,4 +1,9 @@
-import type { AiMode, BotAiRuntimeView, Language } from '@yuristim/types';
+import {
+  formatAiFailure,
+  type AiMode,
+  type BotAiRuntimeView,
+  type Language,
+} from '@yuristim/types';
 import type { YuristimBotContext } from '../bot.js';
 import { YuristimApiError } from '../api/yuristim-api.client.js';
 import { t } from '../i18n/index.js';
@@ -264,7 +269,17 @@ export async function sendAiPrompt(
         } catch {
           recordBotPerformance('ai_refund', { success: false, errorCategory: 'refund_failed' });
         }
-        await context.reply(t(language, 'apiError')).catch(() => undefined);
+        await context
+          .reply(
+            formatAiFailure(language, {
+              reason: 'delivery_failed',
+              stage: 'delivery',
+              receivedCharacters: chunks.slice(0, chunksSent).join('').length,
+              operation: 'send_telegram_message',
+              messageId: result.message.id,
+            }),
+          )
+          .catch(() => undefined);
       }
     } catch (error) {
       await context.reply(aiErrorText(language, error));
@@ -327,7 +342,9 @@ export function telegramPlainText(value: string): string {
 }
 
 function aiErrorText(language: Language, error: unknown): string {
-  if (!(error instanceof YuristimApiError)) return t(language, 'apiError');
+  if (!(error instanceof YuristimApiError))
+    return formatAiFailure(language, { reason: 'internal_error', stage: 'client' });
+  if (error.diagnostic) return formatAiFailure(language, error.diagnostic);
   switch (error.code) {
     case 'INSUFFICIENT_CREDITS':
       return t(language, 'aiInsufficient');
@@ -341,6 +358,10 @@ function aiErrorText(language: Language, error: unknown): string {
     case 'AI_PROVIDER_UNAVAILABLE':
       return t(language, 'aiProviderUnavailable');
     default:
-      return t(language, 'apiError');
+      return formatAiFailure(language, {
+        reason: error.code === 'MALFORMED_RESPONSE' ? 'malformed_response' : 'unknown',
+        stage: 'client',
+        upstreamStatus: error.statusCode,
+      });
   }
 }

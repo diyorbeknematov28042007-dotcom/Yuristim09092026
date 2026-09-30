@@ -62,16 +62,17 @@ function parseChunk(value: Record<string, unknown>): {
   };
 }
 
-function assertFinished(value: Record<string, unknown>): void {
+function assertFinished(value: Record<string, unknown>): boolean {
   const candidates = Array.isArray(value.candidates) ? value.candidates : [];
   const candidate = candidates[0];
-  if (!candidate || typeof candidate !== 'object') return;
+  if (!candidate || typeof candidate !== 'object') return false;
   const reason = (candidate as Record<string, unknown>).finishReason;
   if (typeof reason === 'string' && reason !== 'STOP') {
     throw new AiProviderError('unavailable', false, undefined, undefined, {
       reason: reason === 'MAX_TOKENS' ? 'output_limit' : 'incomplete_response',
     });
   }
+  return reason === 'STOP';
 }
 
 export class GeminiAdapter implements AiProviderAdapter {
@@ -94,7 +95,10 @@ export class GeminiAdapter implements AiProviderAdapter {
       });
     }
     const parsed = parseChunk(value as Record<string, unknown>);
-    assertFinished(value as Record<string, unknown>);
+    if (!assertFinished(value as Record<string, unknown>))
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'missing_finish',
+      });
     if (!parsed.content.trim())
       throw new AiProviderError('unavailable', false, undefined, undefined, {
         reason: 'empty_response',
@@ -114,6 +118,7 @@ export class GeminiAdapter implements AiProviderAdapter {
     let content = '';
     let inputTokens = 0;
     let outputTokens = 0;
+    let finished = false;
     for await (const value of readSseJson(response)) {
       const parsed = parseChunk(value);
       if (parsed.content) {
@@ -122,8 +127,12 @@ export class GeminiAdapter implements AiProviderAdapter {
       }
       inputTokens = parsed.inputTokens || inputTokens;
       outputTokens = parsed.outputTokens || outputTokens;
-      assertFinished(value);
+      finished = assertFinished(value) || finished;
     }
+    if (!finished)
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'missing_finish',
+      });
     if (!content.trim())
       throw new AiProviderError('unavailable', false, undefined, undefined, {
         reason: 'empty_response',

@@ -16,10 +16,89 @@ function request(): AiProviderRequest {
 }
 
 describe('provider adapters', () => {
+  it('rejects a truncated Gemini stream even when content and usage look valid', async () => {
+    const chunk = {
+      candidates: [{ content: { parts: [{ text: '277-modd' }] } }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+    };
+    const adapter = new GeminiAdapter({
+      apiKey: 'test',
+      model: 'test',
+      thinkingLevel: 'low',
+      fetch: async () => new Response(`data: ${JSON.stringify(chunk)}\n\n`),
+    });
+    const delta = vi.fn();
+    await expect(adapter.stream(request(), delta)).rejects.toMatchObject({
+      diagnostics: { reason: 'missing_finish' },
+    });
+    expect(delta).toHaveBeenCalledWith('277-modd');
+  });
+  it('accepts STOP with a complete Gemini stream', async () => {
+    const chunk = {
+      candidates: [{ content: { parts: [{ text: 'To‘liq javob' }] }, finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+    };
+    const adapter = new GeminiAdapter({
+      apiKey: 'test',
+      model: 'test',
+      thinkingLevel: 'low',
+      fetch: async () => new Response(`data: ${JSON.stringify(chunk)}`),
+    });
+    await expect(adapter.stream(request(), vi.fn())).resolves.toMatchObject({
+      content: 'To‘liq javob',
+    });
+  });
+  it.each(['openai', 'anthropic'] as const)(
+    'rejects %s streams missing their terminal event',
+    async (provider) => {
+      const chunks =
+        provider === 'openai'
+          ? [{ type: 'response.output_text.delta', delta: 'partial' }]
+          : [
+              { type: 'message_start', message: { usage: { input_tokens: 10 } } },
+              { type: 'content_block_delta', delta: { text: 'partial' } },
+              { type: 'message_delta', usage: { output_tokens: 8 } },
+            ];
+      const fetch = async () =>
+        new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join(''));
+      const adapter =
+        provider === 'openai'
+          ? new OpenAiAdapter({ apiKey: 'test', model: 'test', reasoningEffort: 'low', fetch })
+          : new AnthropicAdapter({ apiKey: 'test', model: 'test', effort: 'low', fetch });
+      await expect(adapter.stream(request(), vi.fn())).rejects.toMatchObject({
+        diagnostics: { reason: 'missing_finish' },
+      });
+    },
+  );
+  it('does not confuse unclassified incomplete output with a token limit', async () => {
+    const adapter = new OpenAiAdapter({
+      apiKey: 'test',
+      model: 'test',
+      reasoningEffort: 'low',
+      fetch: async () =>
+        Response.json({ status: 'incomplete', incomplete_details: { reason: 'content_filter' } }),
+    });
+    await expect(adapter.generate(request())).rejects.toMatchObject({
+      diagnostics: { reason: 'incomplete_response' },
+    });
+  });
+  it('distinguishes explicit quota exhaustion from a bare 429', async () => {
+    await expect(
+      assertProviderResponse(
+        Response.json(
+          { error: { code: 'insufficient_quota', message: 'SECRET' } },
+          { status: 429 },
+        ),
+      ),
+    ).rejects.toMatchObject({ diagnostics: { reason: 'quota_exhausted', statusCode: 429 } });
+    await expect(
+      assertProviderResponse(Response.json({ error: { message: 'SECRET' } }, { status: 429 })),
+    ).rejects.toMatchObject({ diagnostics: { reason: 'http_error', statusCode: 429 } });
+  });
   it('normalizes Gemini content and usage', async () => {
     const fetch = vi.fn().mockResolvedValue(
       Response.json({
-        candidates: [{ content: { parts: [{ text: 'Javob' }] } }],
+        candidates: [{ content: { parts: [{ text: 'Javob' }] }, finishReason: 'STOP' }],
         usageMetadata: { candidatesTokenCount: 7, promptTokenCount: 11 },
       }),
     );
@@ -93,6 +172,7 @@ describe('provider adapters', () => {
       fetch: vi.fn().mockResolvedValue(
         Response.json({
           status: 'incomplete',
+          incomplete_details: { reason: 'max_output_tokens' },
           output: [{ content: [{ text: 'Yarim javob' }] }],
           usage: { input_tokens: 10, output_tokens: 500 },
         }),

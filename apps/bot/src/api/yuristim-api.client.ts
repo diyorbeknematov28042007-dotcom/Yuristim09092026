@@ -1,5 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import {
+  parseAiFailure,
+  type AiFailureDiagnostic,
   LANGUAGES,
   USER_MODES,
   USER_ROLES,
@@ -152,6 +154,7 @@ export class YuristimApiError extends Error {
   constructor(
     readonly code: ApiErrorCode | 'API_UNAVAILABLE' | 'MALFORMED_RESPONSE',
     readonly statusCode: number,
+    readonly diagnostic?: AiFailureDiagnostic,
   ) {
     super('Yuristim API request failed');
     this.name = 'YuristimApiError';
@@ -236,7 +239,10 @@ const runtimeContextSchema = z.object({
     onboardingStatus: z.enum(onboardingStatuses),
   }),
 });
-const errorSchema = z.object({ error: z.object({ code: z.string() }) });
+const errorSchema = z.object({
+  error: z.object({ code: z.string(), diagnostic: z.unknown().optional() }),
+  requestId: z.string().optional(),
+});
 const specializationSchema = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const verificationSchema = z.object({
   draft: z.object({
@@ -936,7 +942,11 @@ export class YuristimApiClient implements YuristimApi {
         const code = parsedError.success
           ? (parsedError.data.error.code as ApiErrorCode)
           : 'API_UNAVAILABLE';
-        throw new YuristimApiError(code, response.status);
+        throw new YuristimApiError(
+          code,
+          response.status,
+          parsedError.success ? parseAiFailure(parsedError.data.error.diagnostic) : undefined,
+        );
       }
       success = true;
       return payload;
@@ -947,7 +957,12 @@ export class YuristimApiClient implements YuristimApi {
           ? error.code
           : 'network_error';
       if (error instanceof YuristimApiError) throw error;
-      throw new YuristimApiError('API_UNAVAILABLE', 503);
+      throw new YuristimApiError('API_UNAVAILABLE', 503, {
+        reason: controller.signal.aborted ? 'client_timeout' : 'client_network_error',
+        stage: 'client',
+        requestId,
+        elapsedMilliseconds: Date.now() - startedAt,
+      });
     } finally {
       clearTimeout(timer);
       recordBotPerformance('bot_to_api', {
