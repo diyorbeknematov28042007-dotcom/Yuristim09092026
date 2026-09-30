@@ -369,6 +369,85 @@ function fixture(options: { balance?: number; providerFailure?: AiProviderError 
 }
 
 describe('AiService conversation and charging lifecycle', () => {
+  it('reports how much text arrived before a missing terminal marker', async () => {
+    const { service } = fixture();
+    vi.spyOn(service.gateway, 'execute').mockImplementation(async (input) => {
+      await input.onDelta?.('277-modd');
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'missing_finish',
+      });
+    });
+    const conversation = await service.createConversation(userA, 'uz');
+    await expect(
+      service.send({
+        userId: userA,
+        language: 'uz',
+        conversationId: conversation.id,
+        content: 'JK 277 nima',
+        idempotencyKey: 'partial-diag-request',
+        requestId: 'trace-partial',
+        onDelta: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      diagnostic: { reason: 'missing_finish', receivedCharacters: 8, stage: 'generation' },
+    });
+  });
+  it('keeps the exact failure reason in the live error and owner-only history/status', async () => {
+    const { service, repository } = fixture({
+      providerFailure: new AiProviderError('unavailable', false, 'PRIVATE', undefined, {
+        reason: 'missing_finish',
+      }),
+    });
+    const conversation = await service.createConversation(userA, 'uz');
+    await expect(
+      service.send({
+        userId: userA,
+        language: 'uz',
+        conversationId: conversation.id,
+        content: 'JK 277 nima',
+        idempotencyKey: 'diag-test-request',
+        requestId: 'trace-123',
+      }),
+    ).rejects.toMatchObject({
+      diagnostic: {
+        reason: 'missing_finish',
+        stage: 'generation',
+        requestId: 'trace-123',
+        receivedCharacters: 0,
+      },
+    });
+    expect(repository.messages.find((row) => row.role === 'assistant')).toMatchObject({
+      status: 'failed',
+      error_code: 'ai_generation_missing_finish_op_request_provider',
+    });
+    const status = await service.requestStatus(userA, conversation.id, 'diag-test-request', 'uz');
+    expect(status).toMatchObject({
+      status: 'failed',
+      diagnostic: { reason: 'missing_finish', stage: 'generation' },
+    });
+    const history = await service.getConversation(userA, conversation.id, 'uz');
+    expect(history.messages.find((message) => message.role === 'assistant')).toMatchObject({
+      diagnostic: { reason: 'missing_finish' },
+    });
+    await expect(
+      service.requestStatus(userB, conversation.id, 'diag-test-request', 'uz'),
+    ).rejects.toMatchObject({ code: 'AI_CONVERSATION_NOT_FOUND' });
+  });
+  it('identifies finalize failures separately from provider failures', async () => {
+    const { service, repository } = fixture();
+    const conversation = await service.createConversation(userA, 'uz');
+    vi.spyOn(repository, 'completeMessage').mockRejectedValue(new Error('PRIVATE DB error'));
+    await expect(
+      service.send({
+        userId: userA,
+        language: 'uz',
+        conversationId: conversation.id,
+        content: 'Test',
+        idempotencyKey: 'diag-db-request',
+        requestId: 'trace-db',
+      }),
+    ).rejects.toMatchObject({ diagnostic: { reason: 'internal_error', stage: 'finalize' } });
+  });
   beforeEach(() => vi.restoreAllMocks());
 
   it('creates user-owned isolated conversations and rejects cross-user access', async () => {
@@ -527,7 +606,7 @@ describe('AiService conversation and charging lifecycle', () => {
     });
     expect(repository.messages.find((row) => row.role === 'assistant')).toMatchObject({
       charged_credits: 0,
-      error_code: 'provider_unavailable',
+      error_code: 'ai_generation_unknown_op_request_provider',
       status: 'failed',
     });
   });

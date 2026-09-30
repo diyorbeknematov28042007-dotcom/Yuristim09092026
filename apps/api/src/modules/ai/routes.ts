@@ -236,6 +236,16 @@ export function registerAiRoutes(
       finished = true;
       reply.raw.end();
     } catch (error) {
+      request.log.error(
+        {
+          code: error instanceof AppError ? error.code : 'INTERNAL_ERROR',
+          diagnostic:
+            error instanceof AppError
+              ? error.diagnostic
+              : { reason: 'delivery_failed', stage: 'delivery', requestId: request.id },
+        },
+        'AI stream failed',
+      );
       if (chargedMessageId && !finished) {
         await options.ai
           .reverseDeliveryFailure(user.id, chargedMessageId)
@@ -245,7 +255,13 @@ export function registerAiRoutes(
       }
       if (!reply.raw.destroyed && !reply.raw.writableEnded) {
         const code = error instanceof AppError ? error.code : 'INTERNAL_ERROR';
-        await writeSse(reply, 'error', { code, requestId: request.id }).catch(() => undefined);
+        await writeSse(reply, 'error', {
+          code,
+          requestId: request.id,
+          ...(error instanceof AppError && error.diagnostic
+            ? { diagnostic: error.diagnostic }
+            : {}),
+        }).catch(() => undefined);
         reply.raw.end();
       }
     } finally {

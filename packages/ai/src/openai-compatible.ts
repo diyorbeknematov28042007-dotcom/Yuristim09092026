@@ -54,6 +54,15 @@ function responseUsage(value: Record<string, unknown>) {
   return { inputTokens: number(usage.input_tokens), outputTokens: number(usage.output_tokens) };
 }
 
+function incompleteReason(value: Record<string, unknown>): 'output_limit' | 'incomplete_response' {
+  const details = value.incomplete_details;
+  return details &&
+    typeof details === 'object' &&
+    (details as Record<string, unknown>).reason === 'max_output_tokens'
+    ? 'output_limit'
+    : 'incomplete_response';
+}
+
 export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
   readonly name: Extract<AiProviderName, 'openai' | 'bai'>;
   readonly supportsStreaming = true;
@@ -77,7 +86,7 @@ export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
     const record = value as Record<string, unknown>;
     if (record.status === 'incomplete' || record.status === 'failed') {
       throw new AiProviderError('unavailable', false, undefined, undefined, {
-        reason: record.status === 'incomplete' ? 'output_limit' : 'incomplete_response',
+        reason: record.status === 'incomplete' ? incompleteReason(record) : 'incomplete_response',
       });
     }
     const content = responseContent(record).trim();
@@ -94,10 +103,16 @@ export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
     const response = await this.call(request, true);
     let content = '';
     let usage = { inputTokens: 0, outputTokens: 0 };
+    let finished = false;
     for await (const event of readSseJson(response)) {
       if (event.type === 'response.incomplete' || event.type === 'response.failed') {
         throw new AiProviderError('unavailable', false, undefined, undefined, {
-          reason: event.type === 'response.incomplete' ? 'output_limit' : 'incomplete_response',
+          reason:
+            event.type === 'response.incomplete' &&
+            event.response &&
+            typeof event.response === 'object'
+              ? incompleteReason(event.response as Record<string, unknown>)
+              : 'incomplete_response',
         });
       }
       if (event.type === 'response.output_text.delta') {
@@ -113,11 +128,19 @@ export class OpenAiCompatibleResponsesAdapter implements AiProviderAdapter {
         typeof event.response === 'object'
       ) {
         const completed = event.response as Record<string, unknown>;
+        finished = true;
         usage = responseUsage(completed);
         if (!content) content = responseContent(completed);
       }
     }
-    if (!content.trim()) throw new AiProviderError('unavailable', false);
+    if (!finished)
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'missing_finish',
+      });
+    if (!content.trim())
+      throw new AiProviderError('unavailable', false, undefined, undefined, {
+        reason: 'empty_response',
+      });
     assertUsage(usage.inputTokens, usage.outputTokens);
     return { content: content.trim(), usage };
   }

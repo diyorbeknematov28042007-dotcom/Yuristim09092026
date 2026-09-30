@@ -85,6 +85,7 @@ export async function assertProviderResponse(response: Response): Promise<void> 
   if (response.ok) return;
   const retryAfter = retryAfterMilliseconds(response.headers.get('retry-after'));
   let providerErrorCode: string | undefined;
+  let explicitQuotaExhausted = false;
   try {
     const value: unknown = await response.json();
     if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -92,6 +93,18 @@ export async function assertProviderResponse(response: Response): Promise<void> 
       if (error && typeof error === 'object' && !Array.isArray(error)) {
         const code = (error as Record<string, unknown>).code;
         if (typeof code === 'string') providerErrorCode = code;
+        const record = error as Record<string, unknown>;
+        const details = Array.isArray(record.details) ? record.details : [];
+        explicitQuotaExhausted =
+          ['insufficient_quota', 'insufficient_user_quota', 'QUOTA_EXCEEDED'].includes(
+            providerErrorCode ?? '',
+          ) ||
+          details.some(
+            (detail) =>
+              detail &&
+              typeof detail === 'object' &&
+              (detail as Record<string, unknown>).reason === 'QUOTA_EXCEEDED',
+          );
       }
     }
   } catch {
@@ -105,7 +118,7 @@ export async function assertProviderResponse(response: Response): Promise<void> 
     error.retryAfterMilliseconds,
     {
       statusCode: response.status,
-      reason: 'http_error',
+      reason: explicitQuotaExhausted ? 'quota_exhausted' : 'http_error',
     },
   );
 }

@@ -30,6 +30,38 @@ const apiUser = {
 };
 
 describe('YuristimApiClient', () => {
+  it('passes safe AI diagnostics to the Telegram error renderer', async () => {
+    const diagnostic = {
+      reason: 'missing_finish',
+      stage: 'generation',
+      requestId: 'ref-123',
+      receivedCharacters: 8,
+    };
+    const client = new YuristimApiClient({
+      baseUrl: 'http://localhost:3001',
+      internalApiSecret: secret,
+      fetch: async () =>
+        Response.json(
+          {
+            error: {
+              code: 'AI_PROVIDER_UNAVAILABLE',
+              diagnostic: { ...diagnostic, provider: 'gemini', token: 'PRIVATE' },
+            },
+          },
+          { status: 503 },
+        ),
+    });
+    const error = await client
+      .sendAiMessage(
+        identity.telegramUserId,
+        'aic_000000000000000000000001',
+        'Savol',
+        'diagnostic-test',
+      )
+      .catch((error) => error);
+    expect(error.diagnostic).toEqual(diagnostic);
+    expect(JSON.stringify(error.diagnostic)).not.toMatch(/PRIVATE|gemini/);
+  });
   it('adds timestamped HMAC and request ID to an internal API request', async () => {
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(Response.json({ created: true, user: apiUser })),

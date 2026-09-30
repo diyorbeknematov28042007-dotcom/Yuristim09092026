@@ -52,6 +52,9 @@ export interface AiProviderDiagnostics {
     | 'incomplete_response'
     | 'circuit_open'
     | 'request_budget'
+    | 'missing_finish'
+    | 'quota_exhausted'
+    | 'delivery_failed'
     | undefined;
 }
 

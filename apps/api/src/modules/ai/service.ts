@@ -30,9 +30,16 @@ import type {
   AiStatusView,
   BotAiRuntimeView,
   Language,
+  AiFailureDiagnostic,
 } from '@yuristim/types';
 import { AppError } from '../../lib/errors.js';
 import type { CreditService } from '../credits/service.js';
+import {
+  failureDiagnostic,
+  persistedFailureCode,
+  storedFailureDiagnostic,
+  type AiRequestTrace,
+} from './diagnostics.js';
 
 export interface AiBotStatusView extends AiStatusView {
   telegramControlMessageId: number | null;
@@ -57,6 +64,7 @@ export interface AiTelemetry {
   errorCategory?: string;
   statusCode?: number;
   errorReason?: string;
+  diagnostic?: AiFailureDiagnostic;
 }
 
 export interface AiPerformanceMetric {
@@ -137,28 +145,41 @@ function messageView(
     sources: sources.filter((source) => source.message_id === row.id).map(sourceView),
     status: row.status as AiMessageView['status'],
     ...(requestKey ? { requestKey } : {}),
+    ...((row.status === 'failed' || row.status === 'cancelled') &&
+    storedFailureDiagnostic(row.error_code)
+      ? { diagnostic: { ...storedFailureDiagnostic(row.error_code)!, messageId: row.public_id } }
+      : {}),
   };
 }
 
-function providerAppError(category: AiProviderErrorCategory): AppError {
+function providerAppError(
+  category: AiProviderErrorCategory,
+  diagnostic?: AiFailureDiagnostic,
+): AppError {
   switch (category) {
     case 'configuration':
-      return new AppError(503, 'AI_PROVIDER_NOT_CONFIGURED', 'AI mode is not configured');
+      return new AppError(
+        503,
+        'AI_PROVIDER_NOT_CONFIGURED',
+        'AI mode is not configured',
+        diagnostic,
+      );
     case 'timeout':
-      return new AppError(504, 'AI_PROVIDER_TIMEOUT', 'AI request timed out');
+      return new AppError(504, 'AI_PROVIDER_TIMEOUT', 'AI request timed out', diagnostic);
     case 'rate_limit':
-      return new AppError(503, 'AI_PROVIDER_RATE_LIMIT', 'AI provider is temporarily busy');
+      return new AppError(
+        503,
+        'AI_PROVIDER_RATE_LIMIT',
+        'AI provider is temporarily busy',
+        diagnostic,
+      );
     case 'cancelled':
-      return new AppError(408, 'AI_REQUEST_CANCELLED', 'AI request was cancelled');
+      return new AppError(408, 'AI_REQUEST_CANCELLED', 'AI request was cancelled', diagnostic);
     case 'invalid_request':
     case 'unavailable':
     case 'unknown':
-      return new AppError(503, 'AI_PROVIDER_UNAVAILABLE', 'AI provider is unavailable');
+      return new AppError(503, 'AI_PROVIDER_UNAVAILABLE', 'AI provider is unavailable', diagnostic);
   }
-}
-
-function errorCode(error: AiProviderError): string {
-  return `provider_${error.category}`;
 }
 
 export class AiService {
@@ -233,6 +254,7 @@ export class AiService {
     status: 'missing' | 'processing' | 'failed' | 'completed';
     message?: AiMessageView;
     conversation?: AiConversationView;
+    diagnostic?: AiFailureDiagnostic;
   }> {
     const conversation = await this.ownedConversation(userId, publicId);
     const messages = await this.repository.listMessages(conversation.id);
@@ -244,7 +266,18 @@ export class AiService {
     if (!assistant || ['pending', 'running', 'streaming'].includes(assistant.status)) {
       return { status: 'processing' };
     }
-    if (assistant.status !== 'completed') return { status: 'failed' };
+    if (assistant.status !== 'completed')
+      return {
+        status: 'failed',
+        ...(storedFailureDiagnostic(assistant.error_code)
+          ? {
+              diagnostic: {
+                ...storedFailureDiagnostic(assistant.error_code)!,
+                messageId: assistant.public_id,
+              },
+            }
+          : {}),
+      };
     const sources = await this.repository.listSources([assistant.id]);
     return {
       status: 'completed',
@@ -436,9 +469,33 @@ export class AiService {
   }
 
   async send(input: AiSendInput): Promise<AiSendResult> {
+    const trace: AiRequestTrace = {
+      startedAt: Date.now(),
+      stage: 'prepare',
+      receivedCharacters: 0,
+      requestId: input.requestId,
+    };
+    try {
+      return await this.sendTracked(input, trace);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      const diagnostic = failureDiagnostic(error, trace);
+      if (error instanceof AiProviderError) throw providerAppError(error.category, diagnostic);
+      throw new AppError(
+        500,
+        'INTERNAL_ERROR',
+        'AI request failed at the recorded stage',
+        diagnostic,
+      );
+    }
+  }
+
+  private async sendTracked(input: AiSendInput, trace: AiRequestTrace): Promise<AiSendResult> {
     const startedAt = Date.now();
+    trace.operation = 'load_conversation';
     const conversation = await this.ownedConversation(input.userId, input.conversationId);
     const contextReadsStartedAt = Date.now();
+    trace.operation = 'load_history';
     const existingMessages = await this.repository.listMessages(conversation.id);
     const priorUserMessage = existingMessages.find(
       (message) => message.role === 'user' && message.idempotency_key === input.idempotencyKey,
@@ -461,11 +518,13 @@ export class AiService {
           ? 'AI_REQUEST_FAILED'
           : 'AI_CONVERSATION_BUSY',
         'AI request cannot be replayed yet',
+        priorAssistant ? storedFailureDiagnostic(priorAssistant.error_code) : undefined,
       );
     }
     const mode = input.mode ?? (conversation.mode as AiMode);
     const config = this.gateway.config(mode);
     const systemPrompt = buildYuristimSystemPrompt(input.language);
+    trace.operation = 'load_balance';
     const balance = await this.credits.getBalance(input.userId);
     input.performance?.({
       durationMilliseconds: Date.now() - contextReadsStartedAt,
@@ -484,6 +543,7 @@ export class AiService {
     let assistantMessage: AiMessageRow | undefined;
     let ownsMessage = false;
     try {
+      trace.operation = 'begin_message';
       const begun = await this.repository.beginMessage({
         content: input.content,
         conversationId: conversation.id,
@@ -514,6 +574,7 @@ export class AiService {
       }
 
       ownsMessage = true;
+      trace.operation = 'load_history';
       const messages = await this.repository.listMessages(conversation.id);
       const context = buildConversationContext(
         this.contextHistory(messages, assistantMessage.id),
@@ -528,6 +589,8 @@ export class AiService {
       });
       const gatewayStartedAt = Date.now();
       let firstResponseRecorded = false;
+      trace.stage = 'generation';
+      trace.operation = 'request_provider';
       const generated = await this.gateway.execute({
         messages: context.messages,
         mode,
@@ -557,6 +620,7 @@ export class AiService {
         ...(input.onDelta
           ? {
               onDelta: async (delta: string) => {
+                trace.receivedCharacters += delta.length;
                 if (!firstResponseRecorded && delta) {
                   firstResponseRecorded = true;
                   input.performance?.({
@@ -564,7 +628,13 @@ export class AiService {
                     event: 'provider_first_response',
                   });
                 }
-                await input.onDelta?.(delta);
+                try {
+                  await input.onDelta?.(delta);
+                } catch {
+                  throw new AiProviderError('cancelled', false, undefined, undefined, {
+                    reason: 'delivery_failed',
+                  });
+                }
               },
             }
           : {}),
@@ -572,6 +642,8 @@ export class AiService {
         systemPrompt,
       });
       const providerCompletedAt = Date.now();
+      trace.stage = 'finalize';
+      trace.operation = 'route_message';
       await this.repository.routeMessage({
         messageId: assistantMessage.id,
         model: generated.config.model,
@@ -582,6 +654,7 @@ export class AiService {
       const providerCostUsd = calculateProviderCostUsd(generated.config, generated.usage);
       const chargedCredits = calculateCreditCharge(generated.config, generated.usage);
       const creditFinalizeStartedAt = Date.now();
+      trace.operation = 'complete_message';
       const completed = await this.repository.completeMessage({
         chargedCredits,
         content: generated.content,
@@ -608,6 +681,7 @@ export class AiService {
         requestId: input.requestId,
         success: true,
       });
+      trace.operation = 'reload_conversation';
       const updatedConversation = await this.ownedConversation(input.userId, input.conversationId);
       input.performance?.({
         durationMilliseconds: Date.now() - providerCompletedAt,
@@ -621,6 +695,7 @@ export class AiService {
       };
     } catch (error) {
       const finalizeStartedAt = Date.now();
+      const diagnostic = failureDiagnostic(error, trace);
       const category = error instanceof AiProviderError ? error.category : 'unknown';
       if (
         ownsMessage &&
@@ -633,9 +708,7 @@ export class AiService {
             errorCode:
               error instanceof InsufficientCreditsError
                 ? 'insufficient_credits'
-                : error instanceof AiProviderError
-                  ? errorCode(error)
-                  : 'internal_error',
+                : persistedFailureCode(diagnostic),
             messageId: assistantMessage.id,
             now: this.now(),
             userId: input.userId,
@@ -660,6 +733,7 @@ export class AiService {
           : { model: config.model, provider: config.provider }),
         requestId: input.requestId,
         success: false,
+        diagnostic,
       });
       input.performance?.({
         durationMilliseconds: Date.now() - finalizeStartedAt,
@@ -669,12 +743,17 @@ export class AiService {
       if (error instanceof AppError) throw error;
       if (error instanceof InsufficientCreditsError)
         throw new AppError(402, 'INSUFFICIENT_CREDITS', 'Insufficient credits');
-      if (error instanceof AiProviderError) throw providerAppError(error.category);
+      if (error instanceof AiProviderError) throw providerAppError(error.category, diagnostic);
       if (error instanceof AiConversationBusyError)
         throw new AppError(409, 'AI_CONVERSATION_BUSY', error.message);
       if (error instanceof AiConversationNotFoundError)
         throw new AppError(404, 'AI_CONVERSATION_NOT_FOUND', error.message);
-      throw error;
+      throw new AppError(
+        500,
+        'INTERNAL_ERROR',
+        'AI request failed at the recorded stage',
+        diagnostic,
+      );
     }
   }
 
