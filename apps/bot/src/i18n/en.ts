@@ -34,6 +34,11 @@ export const en = {
   documentSamples: '📄 Document samples',
   legalLibrary: '📚 Legal literature',
   createDocument: '✍️ Create a document',
+  freeCalculators: '🧮 Free calculators',
+  freeCalculatorsDescription:
+    '⚙️ Free Yuristim services\n\nUse 12 free interactive tools for legal and everyday calculations without registration.\n\n🧮 Child support, mortgages, court fees, holiday pay, penalties, inheritance, loans, salaries and more.\n\nℹ️ Calculations are provided for information only. Final results may vary depending on your individual circumstances.',
+  allServices: '🌐 All services',
+  servicesTerms: '📄 Terms of use',
   back: '⬅️ Back',
   settingsTitle: 'Settings:',
   profile: '👤 Profile',

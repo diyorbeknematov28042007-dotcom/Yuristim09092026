@@ -18,6 +18,7 @@ const staticCallbacks = [
   'service:document-samples',
   'service:legal-library',
   'service:create-document',
+  'service:free-calculators',
   'settings:profile',
   'settings:role',
   'settings:language',
