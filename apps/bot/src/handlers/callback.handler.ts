@@ -4,7 +4,7 @@ import type { YuristimBotContext } from '../bot.js';
 import { t, telegramLanguage } from '../i18n/index.js';
 import { languageKeyboard, roleKeyboard } from '../keyboards/common.keyboard.js';
 import { questionsKeyboard } from '../keyboards/questions.keyboard.js';
-import { servicesKeyboard } from '../keyboards/services.keyboard.js';
+import { freeCalculatorsKeyboard, servicesKeyboard } from '../keyboards/services.keyboard.js';
 import { settingsKeyboard } from '../keyboards/settings.keyboard.js';
 import {
   aboutText,
@@ -426,6 +426,13 @@ export function registerCallbackHandler(composer: Composer<YuristimBotContext>):
         t(language, callback === 'lawyer:mode' ? 'verificationModeEnabled' : 'roleChanged'),
       );
       await showMainMenu(context, data);
+      return;
+    }
+
+    if (callback === 'service:free-calculators') {
+      await editOrReply(context, t(language, 'freeCalculatorsDescription'), {
+        reply_markup: freeCalculatorsKeyboard(language),
+      });
       return;
     }
 

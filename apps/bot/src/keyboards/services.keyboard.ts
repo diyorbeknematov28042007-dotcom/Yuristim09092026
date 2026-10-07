@@ -10,5 +10,16 @@ export function servicesKeyboard(language: Language): InlineKeyboard {
     .row()
     .text(t(language, 'createDocument'), 'service:create-document')
     .row()
+    .text(t(language, 'freeCalculators'), 'service:free-calculators')
+    .row()
     .text(t(language, 'back'), 'nav:main');
+}
+
+export function freeCalculatorsKeyboard(language: Language): InlineKeyboard {
+  return new InlineKeyboard()
+    .url(t(language, 'allServices'), 'https://xizmatlar.yuristim.pp.ua/')
+    .row()
+    .url(t(language, 'servicesTerms'), 'https://xizmatlar.yuristim.pp.ua/foydalanish-shartlari')
+    .row()
+    .text(t(language, 'back'), 'nav:services');
 }

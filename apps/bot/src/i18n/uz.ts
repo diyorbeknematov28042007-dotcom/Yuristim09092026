@@ -33,6 +33,11 @@ export const uz = {
   documentSamples: '📄 Hujjat namunalari',
   legalLibrary: '📚 Yuridik adabiyotlar',
   createDocument: '✍️ Hujjat yaratish',
+  freeCalculators: '🧮 Bepul kalkulyatorlar',
+  freeCalculatorsDescription:
+    '⚙️ Yuristim bepul xizmatlari\n\nHuquqiy va kundalik hisob-kitoblar uchun 12 ta bepul interaktiv vositadan ro‘yxatdan o‘tmasdan foydalanishingiz mumkin.\n\n🧮 Aliment, ipoteka, davlat boji, ta’til puli, penya, meros, kredit, ish haqi va boshqa kalkulyatorlar.\n\nℹ️ Hisob-kitoblar ma’lumot uchun taqdim etiladi. Yakuniy natija individual holatga qarab farq qilishi mumkin.',
+  allServices: '🌐 Barcha xizmatlar',
+  servicesTerms: '📄 Foydalanish shartlari',
   back: '⬅️ Orqaga',
   settingsTitle: 'Sozlamalar:',
   profile: '👤 Profil',

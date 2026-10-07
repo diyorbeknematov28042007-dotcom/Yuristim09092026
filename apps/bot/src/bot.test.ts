@@ -775,6 +775,7 @@ describe('menus and callback security', () => {
         t(language, 'documentSamples'),
         t(language, 'legalLibrary'),
         t(language, 'createDocument'),
+        t(language, 'freeCalculators'),
         t(language, 'back'),
       ]);
 
@@ -788,6 +789,47 @@ describe('menus and callback security', () => {
         t(language, 'balance'),
         t(language, 'settings'),
       ]);
+    },
+  );
+
+  it.each(['uz', 'ru', 'en'] as const)(
+    'opens free calculators with public URLs and navigates back in %s',
+    async (language) => {
+      const api = new FakeApi();
+      api.data.user = user({ language, onboardingRole: 'user', onboardingStatus: 'completed' });
+      const { bot, calls } = fixture(api);
+      await bot.handleUpdate(textUpdate(t(language, 'services'), 150), botInfo);
+      await bot.handleUpdate(callbackUpdate('service:free-calculators', 151), botInfo);
+
+      const description = calls.find(
+        (call) => call.payload.text === t(language, 'freeCalculatorsDescription'),
+      );
+      expect(description?.method).toBe('editMessageText');
+      expect(description?.payload.reply_markup).toEqual({
+        inline_keyboard: [
+          [{ text: t(language, 'allServices'), url: 'https://xizmatlar.yuristim.pp.ua/' }],
+          [
+            {
+              text: t(language, 'servicesTerms'),
+              url: 'https://xizmatlar.yuristim.pp.ua/foydalanish-shartlari',
+            },
+          ],
+          [{ text: t(language, 'back'), callback_data: 'nav:services' }],
+        ],
+      });
+      expect(calls.some((call) => call.method === 'answerCallbackQuery')).toBe(true);
+
+      await bot.handleUpdate(callbackUpdate('nav:services', 152), botInfo);
+      expect(calls.at(-1)?.payload).toMatchObject({
+        text: t(language, 'servicesTitle'),
+        reply_markup: servicesKeyboard(language),
+      });
+      await bot.handleUpdate(callbackUpdate('nav:main', 153), botInfo);
+      expect(calls.at(-1)?.payload).toMatchObject({
+        text: t(language, 'mainTitle'),
+        reply_markup: mainUserKeyboard(language),
+      });
+      expect(api.actions).toEqual([]);
     },
   );
 
