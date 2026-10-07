@@ -37,9 +37,7 @@ function startOfTashkentDay(now: Date, daysAgo = 0): Date {
     shifted.getUTCMonth(),
     shifted.getUTCDate(),
   );
-  return new Date(
-    localMidnightAsUtc - TASHKENT_OFFSET_MILLISECONDS - daysAgo * DAY_MILLISECONDS,
-  );
+  return new Date(localMidnightAsUtc - TASHKENT_OFFSET_MILLISECONDS - daysAgo * DAY_MILLISECONDS);
 }
 
 type RawProfile = Database['public']['Tables']['lawyer_profiles']['Row'] & {
