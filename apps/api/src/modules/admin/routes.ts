@@ -8,7 +8,7 @@ import type { Founding100Service } from '../founding100/service.js';
 
 const ADMIN_COOKIE = 'yuristim_admin_session';
 
-function readAdminToken(request: FastifyRequest): string {
+export function readAdminToken(request: FastifyRequest): string {
   const token = request.cookies[ADMIN_COOKIE];
   if (!token) throw new AppError(401, 'UNAUTHORIZED', 'Admin authentication is required');
   return token;

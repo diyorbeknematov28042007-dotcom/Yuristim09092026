@@ -1,3 +1,7 @@
+import type {
+  DocumentContributionRow,
+  ContributionInsert,
+} from './document-contribution-repository.js';
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
@@ -8,6 +12,12 @@ export type Database = {
   };
   public: {
     Tables: {
+      document_contributions: {
+        Row: DocumentContributionRow;
+        Insert: ContributionInsert;
+        Update: Partial<DocumentContributionRow>;
+        Relationships: [];
+      };
       admin_accounts: {
         Row: {
           created_at: string;
@@ -1360,6 +1370,14 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      submit_document_contribution: {
+        Args: { p_id: string; p_user_id: string; p_file_sha256: string };
+        Returns: DocumentContributionRow[];
+      };
+      review_document_contribution: {
+        Args: { p_id: string; p_admin_id: string; p_decision: string; p_reason: string | null };
+        Returns: DocumentContributionRow[];
+      };
       accept_balance: {
         Args: { p_lawyer_id: string; p_now?: string };
         Returns: {
