@@ -40,7 +40,7 @@ export type ContributionInsert = Pick<
 export type ContributionPageInput = {
   page: number;
   limit: number;
-  status?: Exclude<ContributionStatus, 'draft'>;
+  status?: Exclude<ContributionStatus, 'draft'> | undefined;
 };
 export class ContributionRepositoryError extends Error {
   constructor(readonly code: string) {

@@ -8,7 +8,10 @@ import {
 } from './document-contribution-repository.js';
 const BUCKET = 'document-contributions';
 function check(error: unknown) {
-  if (error) throw new ContributionRepositoryError((error as {code?: string}).code ?? 'STORAGE_UNAVAILABLE');
+  if (error)
+    throw new ContributionRepositoryError(
+      (error as { code?: string }).code ?? 'STORAGE_UNAVAILABLE',
+    );
 }
 export class SupabaseDocumentContributionRepository implements DocumentContributionRepository {
   constructor(private readonly client: SupabaseClient<Database>) {}

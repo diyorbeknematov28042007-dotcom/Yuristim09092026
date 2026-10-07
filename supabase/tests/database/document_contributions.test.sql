@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(36);
 select has_table('public','document_contributions','private contributions table exists');
 select is((select relrowsecurity from pg_class where oid='public.document_contributions'::regclass),true,'RLS enabled');
 select is((select relforcerowsecurity from pg_class where oid='public.document_contributions'::regclass),true,'RLS forced');
@@ -14,8 +14,8 @@ select is((select file_size_limit from storage.buckets where id='document-contri
 select ok((select allowed_mime_types @> array['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document'] from storage.buckets where id='document-contributions'),'PDF/DOCX enabled');
 select ok(exists(select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='document_contributions_private_objects' and permissive='RESTRICTIVE'),'storage clients denied even if other bucket policies are broad');
 insert into public.users (id,telegram_user_id,duid) values
- ('b3cfa1a0-02a1-4b9f-9101-000000000001',990000000001,'yr_h2testowner000001'),
- ('b3cfa1a0-02a1-4b9f-9101-000000000002',990000000002,'yr_h2testother000002');
+ ('b3cfa1a0-02a1-4b9f-9101-000000000001',990000000001,'yr_h2testowner00001'),
+ ('b3cfa1a0-02a1-4b9f-9101-000000000002',990000000002,'yr_h2testother00002');
 insert into public.admin_accounts(id,username,password_hash,role) values
  ('b3cfa1a0-02a1-4b9f-9101-000000000003','h2_pgtap_admin','synthetic-only','admin'),
  ('b3cfa1a0-02a1-4b9f-9101-000000000004','h2_pgtap_support','synthetic-only','support');
@@ -44,5 +44,11 @@ select is((select count(*)::integer from public.audit_logs where entity_id='b3cf
 select ok(not exists(select 1 from public.audit_logs where entity_id in ('b3cfa1a0-02a1-4b9f-9101-000000000010','b3cfa1a0-02a1-4b9f-9101-000000000011') and (metadata ? 'filename' or metadata ? 'content' or metadata ? 'storagePath')),'audit omits source content');
 select ok(not exists(select 1 from information_schema.columns where table_schema='public' and table_name='document_contributions' and column_name in ('public_url','canonical_template','credit_reward')),'no public URL, automatic canonical template or reward');
 select is((select count(*)::integer from public.document_contributions where user_id='b3cfa1a0-02a1-4b9f-9101-000000000002'),0,'owner-scoped DB query has no other user sources');
+set local role anon;
+select throws_ok('select id from public.document_contributions','42501','permission denied for table document_contributions','anonymous real table read denied');
+reset role;
+set local role authenticated;
+select throws_ok('select id from public.document_contributions','42501','permission denied for table document_contributions','client real table read denied');
+reset role;
 select * from finish();
 rollback;

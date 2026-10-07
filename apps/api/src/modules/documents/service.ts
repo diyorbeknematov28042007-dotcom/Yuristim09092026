@@ -31,6 +31,9 @@ function unsupported(): never {
     'Only valid PDF and DOCX files are supported',
   );
 }
+function hasControl(value: string) {
+  return [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+}
 export function validateUploadMetadata(input: UploadInput): 'pdf' | 'docx' {
   if (
     !TYPES.includes(input.documentType) ||
@@ -40,7 +43,8 @@ export function validateUploadMetadata(input: UploadInput): 'pdf' | 'docx' {
     input.fileSizeBytes < 1 ||
     !input.originalFilename.trim() ||
     input.originalFilename.length > 200 ||
-    /[/\\\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/u.test(input.originalFilename)
+    /[/\\\u202a-\u202e\u2066-\u2069]/u.test(input.originalFilename) ||
+    hasControl(input.originalFilename)
   )
     throw new AppError(400, 'VALIDATION_ERROR', 'Invalid contribution metadata or confirmations');
   if (input.fileSizeBytes > 5242880)
@@ -107,7 +111,8 @@ export function validateDocumentBytes(input: UploadInput, bytes: Uint8Array, mim
     if (
       !name ||
       names.has(name) ||
-      /[\\\x00-\x1f]/.test(name) ||
+      name.includes(String.fromCharCode(92)) ||
+      hasControl(name) ||
       name.startsWith('/') ||
       name.split('/').includes('..') ||
       /(^|\/)(vbaProject\.bin|activeX|embeddings)(\/|$)|\.(exe|dll|js|vbs|bat|cmd)$/i.test(name) ||
