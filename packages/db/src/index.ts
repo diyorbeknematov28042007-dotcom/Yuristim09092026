@@ -12,3 +12,5 @@ export * from './supabase-finance-repository.js';
 export * from './supabase-founding100-repository.js';
 export * from './supabase-lawyer-repository.js';
 export * from './supabase-marketplace-repository.js';
+export * from './document-contribution-repository.js';
+export * from './supabase-document-contribution-repository.js';

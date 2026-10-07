@@ -23,9 +23,26 @@ export function registerErrorHandler(app: FastifyInstance): void {
 
   app.setErrorHandler((error, request, reply) => {
     const knownError = error instanceof AppError;
-    const statusCode = knownError ? error.statusCode : 500;
-    const code = knownError ? error.code : 'INTERNAL_ERROR';
-    const message = knownError ? error.message : 'Internal server error';
+    const parserCode = (error as { code?: string }).code;
+    const parserStatus =
+      parserCode === 'FST_ERR_CTP_BODY_TOO_LARGE'
+        ? 413
+        : parserCode === 'FST_ERR_CTP_INVALID_MEDIA_TYPE'
+          ? 415
+          : parserCode === 'FST_ERR_CTP_INVALID_JSON_BODY'
+            ? 400
+            : 500;
+    const statusCode = knownError ? error.statusCode : parserStatus;
+    const code = knownError
+      ? error.code
+      : parserStatus < 500
+        ? 'VALIDATION_ERROR'
+        : 'INTERNAL_ERROR';
+    const message = knownError
+      ? error.message
+      : parserStatus < 500
+        ? 'Invalid request body'
+        : 'Internal server error';
 
     if (statusCode >= 500) {
       request.log.error(

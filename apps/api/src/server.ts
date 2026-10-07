@@ -1,3 +1,5 @@
+import { SupabaseDocumentContributionRepository } from '@yuristim/db';
+import { DocumentContributionService } from './modules/documents/service.js';
 import {
   createServerDatabaseClient,
   SupabaseAiRepository,
@@ -25,6 +27,9 @@ const databaseClient = createServerDatabaseClient({
   serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
   url: env.SUPABASE_URL,
 });
+const documentContributionService = new DocumentContributionService(
+  new SupabaseDocumentContributionRepository(databaseClient),
+);
 const authService = new CoreAuthService(new SupabaseCoreRepository(databaseClient), {
   challengeTtlSeconds: env.LOGIN_CHALLENGE_TTL_SECONDS,
   sessionSecret: env.SESSION_SECRET,
@@ -55,6 +60,7 @@ await adminService.bootstrap(env.ADMIN_BOOTSTRAP_USERNAME, env.ADMIN_BOOTSTRAP_P
 const app = buildApp({
   core: {
     adminService,
+    documentContributionService,
     internalBotSecret: env.INTERNAL_BOT_API_SECRET,
     production: env.NODE_ENV === 'production',
     service: authService,
@@ -73,6 +79,15 @@ const app = buildApp({
 
 app.log.info({ ai: aiService.gateway.runtimeSummary() }, 'AI runtime configuration');
 
+let documentCleanupTimer: NodeJS.Timeout | undefined;
+async function cleanupDocumentDrafts(): Promise<void> {
+  try {
+    await documentContributionService.cleanupExpiredDrafts();
+  } catch {
+    app.log.error('Document draft cleanup temporarily unavailable');
+  }
+}
+
 let weeklyCreditTimer: NodeJS.Timeout | undefined;
 
 async function runWeeklyCreditGrant(): Promise<void> {
@@ -87,6 +102,7 @@ async function runWeeklyCreditGrant(): Promise<void> {
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'Shutting down');
   if (weeklyCreditTimer) clearInterval(weeklyCreditTimer);
+  if (documentCleanupTimer) clearInterval(documentCleanupTimer);
   await app.close();
 }
 
@@ -103,6 +119,9 @@ try {
     host: env.HOST,
     port: env.PORT,
   });
+  await cleanupDocumentDrafts();
+  documentCleanupTimer = setInterval(() => void cleanupDocumentDrafts(), 3600000);
+  documentCleanupTimer.unref();
   await runWeeklyCreditGrant();
   weeklyCreditTimer = setInterval(
     () => void runWeeklyCreditGrant(),

@@ -1,3 +1,5 @@
+import { registerDocumentContributionRoutes } from './modules/documents/routes.js';
+import type { DocumentContributionService } from './modules/documents/service.js';
 import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import Fastify, {
@@ -35,6 +37,7 @@ export interface BuildAppOptions {
     telegramBotToken?: string | undefined;
     lawyerService?: LawyerService;
     adminService?: AdminService;
+    documentContributionService?: DocumentContributionService;
     creditService?: CreditService;
     paymentService?: PaymentService;
     marketplaceService?: MarketplaceService;
@@ -80,6 +83,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         telegramBotToken: core.telegramBotToken,
       });
       registerUserRoutes(coreApp, core.service);
+      if (core.documentContributionService) {
+        coreApp.register(async (documentApp) =>
+          registerDocumentContributionRoutes(documentApp, {
+            auth: core.service,
+            documents: core.documentContributionService!,
+            ...(core.adminService ? { admin: core.adminService } : {}),
+          }),
+        );
+      }
       if (core.creditService) {
         registerCreditRoutes(coreApp, { auth: core.service, credits: core.creditService });
       }
