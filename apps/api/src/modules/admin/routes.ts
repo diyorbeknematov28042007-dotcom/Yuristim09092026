@@ -73,6 +73,11 @@ export function registerAdminRoutes(
     return reply.status(204).send();
   });
 
+  app.get('/admin/stats/users', async (request) => {
+    await service.authenticate(readAdminToken(request));
+    return service.getUserStats();
+  });
+
   app.get('/admin/lawyer-verifications', async (request) => {
     await service.authenticate(readAdminToken(request));
     const query = parseInput(

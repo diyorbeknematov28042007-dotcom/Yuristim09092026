@@ -128,6 +128,11 @@ export class AdminService {
   revoke(sessionId: string): Promise<void> {
     return this.repository.revokeAdminSession(sessionId, this.now());
   }
+
+  getUserStats() {
+    return this.repository.getAdminUserStats(this.now());
+  }
+
   toView(admin: AdminAccountRow): AdminView {
     return {
       id: admin.id,

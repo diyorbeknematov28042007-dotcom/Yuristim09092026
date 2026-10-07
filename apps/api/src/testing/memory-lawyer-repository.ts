@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   AdminAccountRow,
   AdminSessionRow,
+  AdminUserStats,
   FileUploadInput,
   Json,
   LawyerProfileRecord,
@@ -319,6 +320,38 @@ export class MemoryLawyerRepository implements LawyerRepository {
   logAdminLogin(input: { username: string; success: boolean }): Promise<void> {
     this.loginLogs.push({ success: input.success, username: input.username });
     return Promise.resolve();
+  }
+
+  getAdminUserStats(now: Date): Promise<AdminUserStats> {
+    const users = [...this.core.users.values()];
+    const offset = 5 * 60 * 60 * 1000;
+    const shifted = new Date(now.getTime() + offset);
+    const todayStart =
+      Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - offset;
+    const day = 24 * 60 * 60 * 1000;
+    const countFrom = (start: number) =>
+      users.filter((user) => Date.parse(user.created_at) >= start).length;
+
+    return Promise.resolve({
+      totalUsers: users.length,
+      todayUsers: countFrom(todayStart),
+      last7DaysUsers: countFrom(todayStart - 6 * day),
+      last30DaysUsers: countFrom(todayStart - 29 * day),
+      recentUsers: [...users]
+        .sort((left, right) => right.created_at.localeCompare(left.created_at))
+        .slice(0, 10)
+        .map((user) => ({
+          id: user.id,
+          duid: user.duid,
+          name: user.full_name ?? user.telegram_first_name,
+          telegramUsername: user.telegram_username,
+          role: user.onboarding_role,
+          language: user.language,
+          status: user.status,
+          createdAt: user.created_at,
+          updatedAt: user.updated_at,
+        })),
+    });
   }
 
   async listVerifications(

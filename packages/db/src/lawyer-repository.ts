@@ -45,6 +45,24 @@ export interface VerificationRecord {
   documents: VerificationDocumentRow[];
 }
 
+export interface AdminUserStats {
+  totalUsers: number;
+  todayUsers: number;
+  last7DaysUsers: number;
+  last30DaysUsers: number;
+  recentUsers: Array<{
+    id: string;
+    duid: string;
+    name: string | null;
+    telegramUsername: string | null;
+    role: string | null;
+    language: string | null;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
 export interface FileUploadInput {
   bytes: Uint8Array;
   contentType: 'application/pdf' | 'image/jpeg' | 'image/png';
@@ -104,6 +122,7 @@ export interface LawyerRepository {
     userAgent: string | null;
     now: Date;
   }): Promise<void>;
+  getAdminUserStats(now: Date): Promise<AdminUserStats>;
   listVerifications(
     input: VerificationListInput,
   ): Promise<{ items: VerificationRecord[]; total: number }>;

@@ -3,6 +3,7 @@ import type { Database, Json } from './database.types.js';
 import type {
   AdminAccountRow,
   AdminSessionRow,
+  AdminUserStats,
   FileUploadInput,
   LawyerProfileRecord,
   LawyerRoutingProfile,
@@ -24,6 +25,19 @@ function required<T>(data: T | null, error: PostgrestError | null): T {
   if (error) databaseFailure(error);
   if (data === null) throw new Error('Database operation returned no data');
   return data;
+}
+
+const TASHKENT_OFFSET_MILLISECONDS = 5 * 60 * 60 * 1000;
+const DAY_MILLISECONDS = 24 * 60 * 60 * 1000;
+
+function startOfTashkentDay(now: Date, daysAgo = 0): Date {
+  const shifted = new Date(now.getTime() + TASHKENT_OFFSET_MILLISECONDS);
+  const localMidnightAsUtc = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+  );
+  return new Date(localMidnightAsUtc - TASHKENT_OFFSET_MILLISECONDS - daysAgo * DAY_MILLISECONDS);
 }
 
 type RawProfile = Database['public']['Tables']['lawyer_profiles']['Row'] & {
@@ -374,6 +388,57 @@ export class SupabaseLawyerRepository implements LawyerRepository {
       username: input.username,
     });
     if (error) databaseFailure(error);
+  }
+
+  async getAdminUserStats(now: Date): Promise<AdminUserStats> {
+    const todayStart = startOfTashkentDay(now);
+    const last7DaysStart = startOfTashkentDay(now, 6);
+    const last30DaysStart = startOfTashkentDay(now, 29);
+
+    const [total, today, last7Days, last30Days, recent] = await Promise.all([
+      this.client.from('users').select('id', { count: 'exact', head: true }),
+      this.client
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', todayStart.toISOString()),
+      this.client
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', last7DaysStart.toISOString()),
+      this.client
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', last30DaysStart.toISOString()),
+      this.client
+        .from('users')
+        .select(
+          'id,duid,full_name,telegram_first_name,telegram_username,onboarding_role,language,status,created_at,updated_at',
+        )
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ]);
+
+    for (const result of [total, today, last7Days, last30Days, recent]) {
+      if (result.error) databaseFailure(result.error);
+    }
+
+    return {
+      totalUsers: total.count ?? 0,
+      todayUsers: today.count ?? 0,
+      last7DaysUsers: last7Days.count ?? 0,
+      last30DaysUsers: last30Days.count ?? 0,
+      recentUsers: (recent.data ?? []).map((user) => ({
+        id: user.id,
+        duid: user.duid,
+        name: user.full_name ?? user.telegram_first_name,
+        telegramUsername: user.telegram_username,
+        role: user.onboarding_role,
+        language: user.language,
+        status: user.status,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
+      })),
+    };
   }
 
   async listVerifications(
