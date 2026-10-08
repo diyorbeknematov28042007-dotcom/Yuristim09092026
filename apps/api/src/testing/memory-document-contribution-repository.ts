@@ -72,7 +72,7 @@ export class MemoryDocumentContributionRepository implements DocumentContributio
     if (!row || row.user_id !== userId) throw new ContributionRepositoryError('P0002');
     if (row.status !== 'draft') return row;
     if (new Date(row.upload_expires_at) <= new Date())
-      throw new ContributionRepositoryError('40001');
+      throw new ContributionRepositoryError('PT409');
     const updated: DocumentContributionRow = {
       ...row,
       status: 'submitted',
@@ -94,7 +94,7 @@ export class MemoryDocumentContributionRepository implements DocumentContributio
       !['submitted', 'under_review'].includes(row.status) ||
       (decision === 'under_review' && row.status !== 'submitted')
     )
-      throw new ContributionRepositoryError('40001');
+      throw new ContributionRepositoryError('PT409');
     const updated: DocumentContributionRow = {
       ...row,
       status: decision,

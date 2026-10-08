@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(38);
 select has_table('public','document_contributions','private contributions table exists');
 select is((select relrowsecurity from pg_class where oid='public.document_contributions'::regclass),true,'RLS enabled');
 select is((select relforcerowsecurity from pg_class where oid='public.document_contributions'::regclass),true,'RLS forced');
@@ -35,8 +35,10 @@ select lives_ok($$select public.review_document_contribution('b3cfa1a0-02a1-4b9f
 select lives_ok($$select public.review_document_contribution('b3cfa1a0-02a1-4b9f-9101-000000000010','b3cfa1a0-02a1-4b9f-9101-000000000003','approved',null)$$,'approve works');
 select is((select status from public.document_contributions where id='b3cfa1a0-02a1-4b9f-9101-000000000010'),'approved','approved stays a contribution');
 select is((select count(*)::integer from public.audit_logs where entity_id='b3cfa1a0-02a1-4b9f-9101-000000000010'),2,'review start and approve audited');
-select throws_ok($$select public.review_document_contribution('b3cfa1a0-02a1-4b9f-9101-000000000010','b3cfa1a0-02a1-4b9f-9101-000000000003','rejected','Synthetic reason')$$,'40001','invalid review transition','final decision cannot be overwritten');
-select throws_ok($$update public.document_contributions set status='draft' where id='b3cfa1a0-02a1-4b9f-9101-000000000010'$$,'40001','review is final','invalid transition blocked by table guard');
+select throws_ok($$select public.review_document_contribution('b3cfa1a0-02a1-4b9f-9101-000000000010','b3cfa1a0-02a1-4b9f-9101-000000000003','rejected','Synthetic reason')$$,'PT409','invalid review transition','final decision cannot be overwritten without serialization retries');
+select throws_ok($$update public.document_contributions set status='draft' where id='b3cfa1a0-02a1-4b9f-9101-000000000010'$$,'PT409','review is final','invalid transition blocked by table guard');
+select ok(pg_get_functiondef('public.review_document_contribution(uuid,uuid,text,text)'::regprocedure) not like '%40001%','moderation business conflicts never emit retryable serialization errors');
+select ok(pg_get_functiondef('public.submit_document_contribution(uuid,uuid,text)'::regprocedure) not like '%40001%','expired upload business conflicts never emit retryable serialization errors');
 select lives_ok($$select public.submit_document_contribution('b3cfa1a0-02a1-4b9f-9101-000000000011','b3cfa1a0-02a1-4b9f-9101-000000000001',repeat('b',64))$$,'same exact hash is a signal, not automatic rejection');
 select lives_ok($$select public.review_document_contribution('b3cfa1a0-02a1-4b9f-9101-000000000011','b3cfa1a0-02a1-4b9f-9101-000000000003','rejected','Synthetic test reason')$$,'reject works');
 select is((select rejection_reason from public.document_contributions where id='b3cfa1a0-02a1-4b9f-9101-000000000011'),'Synthetic test reason','reason stored');

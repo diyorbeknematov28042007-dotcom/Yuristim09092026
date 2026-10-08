@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { ContributionRepositoryError } from '@yuristim/db';
 import type { FastifyInstance } from 'fastify';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../app.js';
@@ -378,5 +379,20 @@ describe('private document contributions API', () => {
       (await app.inject({ url: `/document-contributions/${id}`, headers: { cookie } })).json()
         .contribution.rejectionReason,
     ).toBe('Synthetic fixture rejected');
+  });
+  it('maps the non-retryable PostgREST conflict to a safe HTTP 409', async () => {
+    const { id } = await submitted();
+    repository.review = async () => {
+      throw new ContributionRepositoryError('PT409');
+    };
+    const response = await app.inject({
+      method: 'POST',
+      url: `/admin/document-contributions/${id}/approve`,
+      headers: { cookie: adminCookie },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('DOCUMENT_CONFLICT');
+    expect(response.body).not.toContain('PT409');
   });
 });

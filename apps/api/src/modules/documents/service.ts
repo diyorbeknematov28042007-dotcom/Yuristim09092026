@@ -162,6 +162,7 @@ export class DocumentContributionService {
           case '42501':
             throw new AppError(403, 'FORBIDDEN', 'Review access is required');
           case '40001':
+          case 'PT409':
             throw new AppError(
               409,
               'DOCUMENT_CONFLICT',
