@@ -42,6 +42,15 @@ function createFixture() {
 }
 
 describe('CoreAuthService users and DUID', () => {
+  it('concurrent client identity resolution creates one account and DUID', async () => {
+    const { repository, service } = createFixture();
+    const results = await Promise.all(
+      Array.from({ length: 3 }, () => service.ensureTelegramUser(identity)),
+    );
+    expect(new Set(results.map((result) => result.user.id)).size).toBe(1);
+    expect(new Set(results.map((result) => result.user.duid)).size).toBe(1);
+    expect(repository.users.size).toBe(1);
+  });
   it('creates one account per Telegram ID and updates mutable Telegram metadata', async () => {
     const { repository, service } = createFixture();
     const first = await service.ensureTelegramUser(identity);
@@ -134,6 +143,7 @@ describe('CoreAuthService Telegram login', () => {
       () => service.verifyPin(user.duid, '0001'),
       () => service.confirmTelegramLogin(login.challenge, identity),
       () => service.consumeTelegramLogin(login.requestId, login.challenge),
+      () => service.resetPin(login.requestId, login.challenge, '4821'),
       () => service.getTelegramLoginStatus(login.requestId),
       () => service.authenticate(issued.rawToken),
     ])
@@ -198,6 +208,18 @@ describe('CoreAuthService Telegram login', () => {
 });
 
 describe('CoreAuthService PIN and sessions', () => {
+  it('an existing session cannot bypass onboarding reset; the original DUID is retained', async () => {
+    const { repository, service } = createFixture();
+    const user = repository.seedUser({ ...completed, telegram_user_id: identity.telegramUserId });
+    const session = await service.loginTelegramMiniApp(identity);
+    await service.updateTelegramOnboarding(identity.telegramUserId, { action: 'reset' });
+    await expect(service.authenticate(session.rawToken)).rejects.toMatchObject({
+      code: 'ONBOARDING_REQUIRED',
+    });
+    const context = await service.getTelegramUserContext(identity.telegramUserId);
+    expect(context.user.id).toBe(user.id);
+    expect(context.user.duid).toBe(user.duid);
+  });
   it('verifies a correct PIN and stores only a session token hash', async () => {
     const { repository, service } = createFixture();
     const user = repository.seedUser({
