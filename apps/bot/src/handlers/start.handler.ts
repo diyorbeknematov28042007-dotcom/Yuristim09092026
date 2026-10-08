@@ -60,16 +60,24 @@ export function registerStartHandler(composer: Composer<YuristimBotContext>): vo
         );
       } catch (error) {
         if (!(error instanceof YuristimApiError)) throw error;
-        if (ensured.user.onboardingStatus !== 'completed' || !ensured.user.termsAcceptedAt) {
-          await showOnboardingStep(context, { user: ensured.user }, context.botConfig);
+        if (error.code === 'USER_BLOCKED') {
+          await context.reply(t(ensured.user.language, 'blocked'));
           return;
         }
+        const expired =
+          error.code === 'LOGIN_CHALLENGE_EXPIRED' || error.code === 'INVALID_LOGIN_CHALLENGE';
         await context.reply(
           ensured.user.language === 'ru'
-            ? 'Ссылка устарела. Получите новую на сайте.'
+            ? expired
+              ? 'Ссылка устарела. Получите новую на сайте.'
+              : 'Не удалось войти. Попробуйте снова.'
             : ensured.user.language === 'en'
-              ? 'This link expired. Request a new one on the website.'
-              : 'Havola eskirgan. Saytdan yangi havola oling.',
+              ? expired
+                ? 'This link expired. Request a new one on the website.'
+                : 'Could not sign in. Please try again.'
+              : expired
+                ? 'Havola eskirgan. Saytdan yangi havola oling.'
+                : 'Hisobga kirib bo‘lmadi. Qayta urinib ko‘ring.',
         );
       }
       return;
