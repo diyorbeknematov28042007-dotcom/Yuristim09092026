@@ -132,6 +132,13 @@ export class CoreAuthService {
       await this.repository.expireLoginRequest(request.id);
       return { expiresAt: request.expires_at, status: 'expired' };
     }
+    if (request.status === 'confirmed' && request.user_id) {
+      const user = await this.requireUser(request.user_id);
+      this.assertUserActive(user);
+      if (!this.onboardingComplete(user)) {
+        return { expiresAt: request.expires_at, status: 'pending' };
+      }
+    }
     return { expiresAt: request.expires_at, status: request.status };
   }
 
@@ -151,6 +158,7 @@ export class CoreAuthService {
     if (loginRequest.status === 'confirmed' && loginRequest.user_id) {
       const confirmedUser = await this.repository.findUserById(loginRequest.user_id);
       if (confirmedUser?.telegram_user_id === identity.telegramUserId) {
+        this.assertUserActive(confirmedUser);
         return { requestId: loginRequest.id, status: 'confirmed' };
       }
     }
@@ -197,6 +205,12 @@ export class CoreAuthService {
     if (this.isExpired(request)) {
       await this.repository.expireLoginRequest(request.id);
       throw new AppError(410, 'LOGIN_CHALLENGE_EXPIRED', 'Login challenge has expired');
+    }
+
+    if (request.status === 'confirmed' && request.user_id) {
+      const user = await this.requireUser(request.user_id);
+      this.assertUserActive(user);
+      this.assertOnboardingComplete(user);
     }
 
     const consumed = await this.repository.consumeLoginRequest({
@@ -426,6 +440,8 @@ export class CoreAuthService {
   }
 
   private async issueSession(user: UserRow): Promise<IssuedSession> {
+    this.assertUserActive(user);
+    this.assertOnboardingComplete(user);
     const now = this.now();
     const rawToken = generateOpaqueToken();
     const expiresAt = new Date(now.getTime() + this.options.sessionTtlSeconds * 1_000);
@@ -460,6 +476,22 @@ export class CoreAuthService {
     if (user.onboarding_role === 'lawyer' && user.full_name === null) return 'name_required';
     if (user.terms_accepted_at === null) return 'terms_acceptance';
     return 'completed';
+  }
+
+  private onboardingComplete(user: UserRow): boolean {
+    return (
+      user.onboarding_status === 'completed' &&
+      user.language !== null &&
+      user.onboarding_role !== null &&
+      user.terms_accepted_at !== null &&
+      (user.onboarding_role !== 'lawyer' || !!user.full_name)
+    );
+  }
+
+  private assertOnboardingComplete(user: UserRow): void {
+    if (!this.onboardingComplete(user)) {
+      throw new AppError(409, 'ONBOARDING_REQUIRED', 'Complete registration in Telegram');
+    }
   }
 
   private assertUserActive(user: UserRow): void {

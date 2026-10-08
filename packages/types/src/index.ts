@@ -61,6 +61,7 @@ export interface UserTagView {
 }
 
 export type ApiErrorCode =
+  | 'ONBOARDING_REQUIRED'
   | 'DOCUMENT_FILE_TOO_LARGE'
   | 'DOCUMENT_UNSUPPORTED_FILE'
   | 'DOCUMENT_CONFLICT'

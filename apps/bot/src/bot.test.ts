@@ -64,6 +64,11 @@ function user(overrides: Partial<UserView> = {}): UserView {
 }
 
 class FakeApi implements YuristimApi {
+  confirmedLoginChallenges: string[] = [];
+  confirmTelegramLogin(challenge: string): Promise<{ requestId: string }> {
+    this.confirmedLoginChallenges.push(challenge);
+    return Promise.resolve({ requestId: '00000000-0000-4000-8000-000000000099' });
+  }
   actions: BotOnboardingAction[] = [];
   created = true;
   requestedTelegramIds: number[] = [];
@@ -668,6 +673,37 @@ function inlineKeyboardLabels(keyboard: unknown): string[] {
 }
 
 describe('/start', () => {
+  it('binds a web login to the real user and continues required onboarding before reporting success', async () => {
+    const { api, bot, calls } = fixture();
+    const update = startUpdate();
+    update.message!.text = `/start login_${'a'.repeat(43)}`;
+    await bot.handleUpdate(update, botInfo);
+    expect(api.confirmedLoginChallenges).toEqual(['a'.repeat(43)]);
+    expect(texts(calls)).toContain(t('uz', 'chooseLanguage'));
+    expect(texts(calls)).not.toContain('Saytga kirish tasdiqlandi.');
+  });
+
+  it('confirms an existing completed account without duplicate onboarding and denies blocked users', async () => {
+    const api = new FakeApi();
+    api.data.user = user({
+      language: 'uz',
+      onboardingRole: 'user',
+      onboardingStatus: 'completed',
+      termsAcceptedAt: '2026-09-09T10:00:00.000Z',
+    });
+    const f = fixture(api);
+    const update = startUpdate();
+    update.message!.text = `/start login_${'a'.repeat(43)}`;
+    await f.bot.handleUpdate(update, botInfo);
+    expect(texts(f.calls)).toContain('Saytga kirish tasdiqlandi.');
+    expect(texts(f.calls)).not.toContain(t('uz', 'chooseLanguage'));
+    api.data.user = user({ status: 'blocked' });
+    const blocked = fixture(api);
+    await blocked.bot.handleUpdate(update, botInfo);
+    expect(api.confirmedLoginChallenges).toHaveLength(1);
+    expect(texts(blocked.calls)).toContain(t(null, 'blocked'));
+  });
+
   it('starts a new user at language selection', async () => {
     const { api, bot, calls } = fixture();
     await bot.handleUpdate(startUpdate(), botInfo);

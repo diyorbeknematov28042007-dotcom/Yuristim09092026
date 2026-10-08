@@ -50,7 +50,24 @@ describe('core auth and user API', () => {
     };
   }
 
+  async function completeRegistration() {
+    await service.ensureTelegramUser(identity);
+    await service.updateTelegramOnboarding(identity.telegramUserId, {
+      action: 'set_language',
+      language: 'uz',
+    });
+    await service.updateTelegramOnboarding(identity.telegramUserId, {
+      action: 'set_role',
+      role: 'user',
+    });
+    await service.updateTelegramOnboarding(identity.telegramUserId, {
+      action: 'accept_terms',
+      termsVersion: '2026-09',
+    });
+  }
+
   async function createSessionCookie(): Promise<string> {
+    await completeRegistration();
     const started = await app.inject({ method: 'POST', url: '/auth/telegram/start' });
     const login = started.json<{ challenge: string; requestId: string }>();
     const confirmBody = { challenge: login.challenge, identity };
@@ -127,12 +144,22 @@ describe('core auth and user API', () => {
   });
 
   it('resets a four-digit PIN through a one-time Telegram challenge', async () => {
+    await completeRegistration();
     const invalidPin = await app.inject({
       method: 'POST',
       payload: { duid: 'yr_abcdefghijklmnop', pin: '123' },
       url: '/auth/pin/verify',
     });
     expect(invalidPin.statusCode).toBe(400);
+    for (const pin of ['123456', 'abcd', '12 4']) {
+      const invalid = await app.inject({
+        method: 'POST',
+        url: '/auth/pin/verify',
+        payload: { duid: 'yr_abcdefghijklmnop', pin },
+      });
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.headers['set-cookie']).toBeUndefined();
+    }
 
     const started = await app.inject({ method: 'POST', url: '/auth/telegram/start' });
     const login = started.json<{ challenge: string; requestId: string }>();
