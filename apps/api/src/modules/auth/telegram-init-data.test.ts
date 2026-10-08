@@ -35,6 +35,12 @@ describe('Telegram Mini App unified identity', () => {
       telegramFirstName: identity.first_name,
       telegramUsername: identity.username,
     });
+    await service.updateTelegramOnboarding(identity.id, { action: 'set_language', language: 'uz' });
+    await service.updateTelegramOnboarding(identity.id, { action: 'set_role', role: 'user' });
+    await service.updateTelegramOnboarding(identity.id, {
+      action: 'accept_terms',
+      termsVersion: '2026-09',
+    });
     const app = buildApp({
       core: {
         internalBotSecret: 'test-internal-secret-that-is-at-least-32-characters',
@@ -75,6 +81,27 @@ describe('Telegram Mini App unified identity', () => {
       });
       expect(expired.statusCode).toBe(401);
       expect(repository.users.size).toBe(1);
+      const newIdentity = { ...identity, id: 280420071 };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const incomplete = await app.inject({
+          method: 'POST',
+          url: '/auth/telegram/miniapp',
+          payload: { initData: signedData(newIdentity) },
+        });
+        expect(incomplete.statusCode).toBe(409);
+        expect(incomplete.json()).toMatchObject({ error: { code: 'ONBOARDING_REQUIRED' } });
+        expect(incomplete.headers['set-cookie']).toBeUndefined();
+      }
+      expect(repository.users.size).toBe(2);
+      await repository.updateUser(bot.user.id, { status: 'blocked' });
+      const blocked = await app.inject({
+        method: 'POST',
+        url: '/auth/telegram/miniapp',
+        payload: { initData: signedData(identity) },
+      });
+      expect(blocked.statusCode).toBe(403);
+      expect(blocked.json()).toMatchObject({ error: { code: 'USER_BLOCKED' } });
+      expect(blocked.headers['set-cookie']).toBeUndefined();
     } finally {
       await app.close();
     }

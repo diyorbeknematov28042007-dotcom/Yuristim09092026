@@ -60,8 +60,20 @@ describe('private document contributions API', () => {
   let cookie: string, otherCookie: string, adminCookie: string;
   beforeEach(async () => {
     const core = new MemoryCoreRepository();
-    const user = core.seedUser({ pin_hash: 'hash:1234' }),
-      other = core.seedUser({ pin_hash: 'hash:1234' });
+    const user = core.seedUser({
+        pin_hash: 'hash:1234',
+        language: 'uz',
+        onboarding_role: 'user',
+        onboarding_status: 'completed',
+        terms_accepted_at: new Date().toISOString(),
+      }),
+      other = core.seedUser({
+        pin_hash: 'hash:1234',
+        language: 'uz',
+        onboarding_role: 'user',
+        onboarding_status: 'completed',
+        terms_accepted_at: new Date().toISOString(),
+      });
     const auth = new CoreAuthService(core, {
       challengeTtlSeconds: 600,
       sessionSecret: 'a-test-session-secret-with-more-than-32-characters',

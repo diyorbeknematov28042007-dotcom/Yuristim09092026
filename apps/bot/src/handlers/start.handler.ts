@@ -47,6 +47,10 @@ export function registerStartHandler(composer: Composer<YuristimBotContext>): vo
           loginChallenge,
           telegramIdentity(context.from),
         );
+        if (ensured.user.onboardingStatus !== 'completed' || !ensured.user.termsAcceptedAt) {
+          await showOnboardingStep(context, { user: ensured.user }, context.botConfig);
+          return;
+        }
         await context.reply(
           ensured.user.language === 'ru'
             ? 'Вход на сайт подтверждён.'
@@ -56,6 +60,10 @@ export function registerStartHandler(composer: Composer<YuristimBotContext>): vo
         );
       } catch (error) {
         if (!(error instanceof YuristimApiError)) throw error;
+        if (ensured.user.onboardingStatus !== 'completed' || !ensured.user.termsAcceptedAt) {
+          await showOnboardingStep(context, { user: ensured.user }, context.botConfig);
+          return;
+        }
         await context.reply(
           ensured.user.language === 'ru'
             ? 'Ссылка устарела. Получите новую на сайте.'

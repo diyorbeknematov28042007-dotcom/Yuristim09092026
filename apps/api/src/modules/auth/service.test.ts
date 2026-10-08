@@ -4,6 +4,13 @@ import { MemoryCoreRepository } from '../../testing/memory-core-repository.js';
 import { CoreAuthService } from './service.js';
 
 const TEST_SECRET = 'test-session-secret-that-is-at-least-32-characters';
+const completed = {
+  language: 'uz',
+  onboarding_role: 'user',
+  onboarding_status: 'completed',
+  terms_accepted_at: '2026-09-09T10:00:00.000Z',
+  terms_version: '2026-09',
+} as const;
 const identity = {
   telegramFirstName: 'Diyorbek',
   telegramUserId: 123_456_789,
@@ -54,7 +61,7 @@ describe('CoreAuthService users and DUID', () => {
 
   it('retries a DUID collision without changing Telegram identity', async () => {
     const repository = new MemoryCoreRepository();
-    repository.seedUser({ duid: 'yr_AAAAAAAAAAAAAAAA' });
+    repository.seedUser({ ...completed, duid: 'yr_AAAAAAAAAAAAAAAA' });
     const values = ['yr_AAAAAAAAAAAAAAAA', 'yr_BBBBBBBBBBBBBBBB'];
     const service = new CoreAuthService(repository, {
       challengeTtlSeconds: 600,
@@ -71,8 +78,88 @@ describe('CoreAuthService users and DUID', () => {
 });
 
 describe('CoreAuthService Telegram login', () => {
+  it('keeps registration pending until explicit Bot onboarding completes, preserving one DUID across clients', async () => {
+    const { repository, service } = createFixture();
+    const login = await service.startTelegramLogin();
+    await service.confirmTelegramLogin(login.challenge, identity);
+    const original = [...repository.users.values()][0]!;
+    expect((await service.getTelegramLoginStatus(login.requestId)).status).toBe('pending');
+    await expect(
+      service.consumeTelegramLogin(login.requestId, login.challenge),
+    ).rejects.toMatchObject({ code: 'ONBOARDING_REQUIRED' });
+    await expect(service.loginTelegramMiniApp(identity)).rejects.toMatchObject({
+      code: 'ONBOARDING_REQUIRED',
+    });
+    expect(repository.sessions.size).toBe(0);
+    expect(repository.loginRequests.get(login.requestId)?.status).toBe('confirmed');
+    await service.updateTelegramOnboarding(identity.telegramUserId, {
+      action: 'set_language',
+      language: 'uz',
+    });
+    await service.updateTelegramOnboarding(identity.telegramUserId, {
+      action: 'set_role',
+      role: 'user',
+    });
+    expect((await service.getTelegramLoginStatus(login.requestId)).status).toBe('pending');
+    await service.updateTelegramOnboarding(identity.telegramUserId, {
+      action: 'accept_terms',
+      termsVersion: '2026-09',
+    });
+    expect((await service.getTelegramLoginStatus(login.requestId)).status).toBe('confirmed');
+    const web = await service.consumeTelegramLogin(login.requestId, login.challenge);
+    const miniapp = await service.loginTelegramMiniApp(identity);
+    const bot = await service.getTelegramUserContext(identity.telegramUserId);
+    expect(web.user.id).toBe(original.id);
+    expect(miniapp.user.id).toBe(original.id);
+    expect(bot.user.id).toBe(original.id);
+    expect(web.user.duid).toBe(original.duid);
+    expect(miniapp.user.duid).toBe(original.duid);
+    expect(bot.user.duid).toBe(original.duid);
+    expect(repository.users.size).toBe(1);
+  });
+
+  it('denies blocked accounts through every auth path, including repeated confirmation and existing sessions', async () => {
+    const { repository, service } = createFixture();
+    const user = repository.seedUser({
+      ...completed,
+      telegram_user_id: identity.telegramUserId,
+      pin_hash: 'test-hash:0001',
+    });
+    const issued = await service.loginTelegramMiniApp(identity);
+    const login = await service.startTelegramLogin();
+    await service.confirmTelegramLogin(login.challenge, identity);
+    await repository.updateUser(user.id, { status: 'blocked' });
+    for (const operation of [
+      () => service.loginTelegramMiniApp(identity),
+      () => service.verifyPin(user.duid, '0001'),
+      () => service.confirmTelegramLogin(login.challenge, identity),
+      () => service.consumeTelegramLogin(login.requestId, login.challenge),
+      () => service.getTelegramLoginStatus(login.requestId),
+      () => service.authenticate(issued.rawToken),
+    ])
+      await expect(operation()).rejects.toMatchObject({ code: 'USER_BLOCKED' });
+    expect(repository.sessions.size).toBe(1);
+  });
+
+  it('does not issue a session before Bot confirmation or after expiration', async () => {
+    const { advance, repository, service } = createFixture();
+    repository.seedUser({ ...completed, telegram_user_id: identity.telegramUserId });
+    const login = await service.startTelegramLogin();
+    await expect(
+      service.consumeTelegramLogin(login.requestId, login.challenge),
+    ).rejects.toMatchObject({ code: 'INVALID_LOGIN_CHALLENGE' });
+    await service.confirmTelegramLogin(login.challenge, identity);
+    advance(601_000);
+    expect((await service.getTelegramLoginStatus(login.requestId)).status).toBe('expired');
+    await expect(
+      service.consumeTelegramLogin(login.requestId, login.challenge),
+    ).rejects.toMatchObject({ code: 'LOGIN_CHALLENGE_EXPIRED' });
+    expect(repository.sessions.size).toBe(0);
+  });
+
   it('creates, confirms idempotently, and consumes a challenge once', async () => {
     const { repository, service } = createFixture();
+    repository.seedUser({ ...completed, telegram_user_id: identity.telegramUserId });
     const login = await service.startTelegramLogin();
 
     expect(repository.loginRequests.get(login.requestId)?.challenge_hash).not.toBe(login.challenge);
@@ -113,7 +200,11 @@ describe('CoreAuthService Telegram login', () => {
 describe('CoreAuthService PIN and sessions', () => {
   it('verifies a correct PIN and stores only a session token hash', async () => {
     const { repository, service } = createFixture();
-    const user = repository.seedUser({ duid: 'yr_DDDDDDDDDDDDDDDD', pin_hash: 'test-hash:0001' });
+    const user = repository.seedUser({
+      ...completed,
+      duid: 'yr_DDDDDDDDDDDDDDDD',
+      pin_hash: 'test-hash:0001',
+    });
 
     const issued = await service.verifyPin(user.duid, '0001');
     expect(issued.user.id).toBe(user.id);
@@ -125,7 +216,11 @@ describe('CoreAuthService PIN and sessions', () => {
 
   it('locks PIN verification temporarily after five failures', async () => {
     const { repository, service } = createFixture();
-    const user = repository.seedUser({ duid: 'yr_EEEEEEEEEEEEEEEE', pin_hash: 'test-hash:0001' });
+    const user = repository.seedUser({
+      ...completed,
+      duid: 'yr_EEEEEEEEEEEEEEEE',
+      pin_hash: 'test-hash:0001',
+    });
 
     for (let attempt = 1; attempt < 5; attempt += 1) {
       await expect(service.verifyPin(user.duid, '9999')).rejects.toMatchObject({
@@ -142,7 +237,11 @@ describe('CoreAuthService PIN and sessions', () => {
 
   it('expires and revokes server-controlled sessions', async () => {
     const { advance, repository, service } = createFixture();
-    const user = repository.seedUser({ duid: 'yr_FFFFFFFFFFFFFFFF', pin_hash: 'test-hash:4821' });
+    const user = repository.seedUser({
+      ...completed,
+      duid: 'yr_FFFFFFFFFFFFFFFF',
+      pin_hash: 'test-hash:4821',
+    });
     const first = await service.verifyPin(user.duid, '4821');
     await service.logout(first.session.id);
     await expect(service.authenticate(first.rawToken)).rejects.toMatchObject({
