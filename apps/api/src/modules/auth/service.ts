@@ -269,6 +269,7 @@ export class CoreAuthService {
     }
     const user = await this.requireUser(session.user_id);
     this.assertUserActive(user);
+    this.assertOnboardingComplete(user);
     await this.repository.touchSession(session.id, now);
     return { session, user };
   }
