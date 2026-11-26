@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS users (
   onboarding_role TEXT CHECK (onboarding_role IS NULL OR onboarding_role IN ('user', 'lawyer')),
   onboarding_status TEXT NOT NULL DEFAULT 'language_selection'
     CHECK (onboarding_status IN ('language_selection', 'role_selection', 'name_required', 'active')),
-  duid TEXT NOT NULL UNIQUE CHECK (length(duid) = 19 AND substr(duid, 1, 3) = 'yr_'),
+  duid TEXT NOT NULL UNIQUE CHECK (
+    length(duid) = 19 AND substr(duid, 1, 3) = 'yr_'
+    AND substr(duid, 4) NOT GLOB '*[^A-Za-z0-9_-]*'
+  ),
   pin_hash TEXT,
   pin_failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (pin_failed_attempts BETWEEN 0 AND 5),
   pin_locked_until TEXT,
@@ -63,7 +66,10 @@ CREATE TABLE IF NOT EXISTS auth_login_requests (
 CREATE TABLE IF NOT EXISTS user_tags (
   id TEXT PRIMARY KEY NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  tag TEXT NOT NULL CHECK (length(tag) BETWEEN 2 AND 64),
+  tag TEXT NOT NULL CHECK (
+    length(tag) BETWEEN 2 AND 64 AND substr(tag, 1, 1) GLOB '[a-z]'
+    AND tag NOT GLOB '*[^a-z0-9:_-]*'
+  ),
   metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata) AND json_type(metadata) = 'object'),
   expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

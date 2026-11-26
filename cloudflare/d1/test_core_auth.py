@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 SCHEMA = Path(__file__).with_name("0001_core_auth.sql").read_text()
+GUARDS = Path(__file__).with_name("0002_identifier_guards.sql").read_text()
 
 
 class CoreAuthSchemaTests(unittest.TestCase):
@@ -13,6 +14,7 @@ class CoreAuthSchemaTests(unittest.TestCase):
         self.db = sqlite3.connect(":memory:")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(SCHEMA)
+        self.db.executescript(GUARDS)
         self.db.execute(
             "INSERT INTO users(id,telegram_user_id,duid) VALUES(?,?,?)",
             ("user-1", 42, "yr_abcdefghijklmnop"),
@@ -58,6 +60,18 @@ class CoreAuthSchemaTests(unittest.TestCase):
             self.db.execute(
                 "INSERT INTO user_tags(id,user_id,tag,metadata) VALUES(?,?,?,?)",
                 ("tag-1", "user-1", "student", "[]"),
+            )
+
+    def test_identifier_alphabets_match_postgres(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "INSERT INTO users(id,telegram_user_id,duid) VALUES(?,?,?)",
+                ("user-2", 43, "yr_abcdefghijklmno!"),
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "INSERT INTO user_tags(id,user_id,tag) VALUES(?,?,?)",
+                ("tag-2", "user-1", "Bad tag"),
             )
 
 
