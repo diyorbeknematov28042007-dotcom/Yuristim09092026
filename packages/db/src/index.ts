@@ -6,6 +6,7 @@ export * from './d1-finance-repository.js';
 export * from './d1-founding100-repository.js';
 export * from './d1-marketplace-repository.js';
 export * from './d1-telegram-update-repository.js';
+export * from './d1-lawyer-review-repository.js';
 export * from './client.js';
 export * from './database.types.js';
 export * from './finance-repository.js';

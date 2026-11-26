@@ -15,7 +15,7 @@ audit, bajarilgan/qolgan ishlar va xavfsizlik gate'lari:
 [Cloudflare migration](docs/cloudflare-migration.md).
 
 - Alohida D1: `yuristim-v2-staging` (`5b79bbfe-c43f-41f6-9dd8-a36b5a700972`);
-  `cloudflare/d1/0001_*.sql`–`0015_*.sql` ketma-ket qo‘llangan.
+  `cloudflare/d1/0001_*.sql`–`0016_*.sql` ketma-ket qo‘llangan.
 - Izolyatsiyalangan Worker:
   `https://yuristim-v2-staging.diyorbeknematov28042007.workers.dev`.
   `GET /health` va `GET /ready` test uchun; qolgan yo‘llar 503.
