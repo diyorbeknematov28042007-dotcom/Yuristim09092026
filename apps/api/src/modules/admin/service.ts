@@ -1,5 +1,3 @@
-import { createHmac, randomBytes } from 'node:crypto';
-import { hash, verify } from '@node-rs/argon2';
 import {
   jsonObject,
   type AdminAccountRow,
@@ -9,23 +7,12 @@ import {
 } from '@yuristim/db';
 import type { AdminView } from '@yuristim/types';
 import { AppError } from '../../lib/errors.js';
+import type { PinHasher } from '../auth/crypto.js';
+import { WorkerArgon2idPinHasher } from '../auth/worker-crypto.js';
+import { createAdminToken, hashAdminToken } from './worker-crypto.js';
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MILLISECONDS = 15 * 60 * 1000;
-
-function hashToken(token: string, secret: string): string {
-  return createHmac('sha256', secret).update(`admin:${token}`).digest('hex');
-}
-
-async function hashPassword(password: string): Promise<string> {
-  return hash(password, {
-    algorithm: 2,
-    memoryCost: 19_456,
-    outputLen: 32,
-    parallelism: 1,
-    timeCost: 2,
-  });
-}
 
 export interface IssuedAdminSession {
   admin: AdminAccountRow;
@@ -40,11 +27,15 @@ export class AdminService {
       sessionSecret: string;
       sessionTtlSeconds: number;
       now?: () => Date;
+      passwordHasher?: PinHasher;
     },
   ) {}
 
   private get now(): () => Date {
     return this.options.now ?? (() => new Date());
+  }
+  private get passwordHasher(): PinHasher {
+    return this.options.passwordHasher ?? new WorkerArgon2idPinHasher();
   }
 
   async bootstrap(username?: string, password?: string): Promise<void> {
@@ -53,7 +44,7 @@ export class AdminService {
       throw new Error('Admin bootstrap credentials must be provided together');
     const normalized = username.toLowerCase();
     if (await this.repository.findAdminByUsername(normalized)) return;
-    await this.repository.createAdmin(normalized, await hashPassword(password));
+    await this.repository.createAdmin(normalized, await this.passwordHasher.hash(password));
   }
 
   async login(input: {
@@ -69,7 +60,8 @@ export class AdminService {
       admin?.locked_until && new Date(admin.locked_until).getTime() > now.getTime(),
     );
     const valid = admin
-      ? !locked && (await verify(admin.password_hash, input.password).catch(() => false))
+      ? !locked &&
+        (await this.passwordHasher.verify(admin.password_hash, input.password).catch(() => false))
       : false;
     await this.repository.logAdminLogin({
       adminId: admin?.id ?? null,
@@ -99,12 +91,12 @@ export class AdminService {
       last_login_at: now.toISOString(),
       locked_until: null,
     });
-    const rawToken = randomBytes(32).toString('base64url');
+    const rawToken = createAdminToken();
     const session = await this.repository.createAdminSession({
       adminId: admin.id,
       expiresAt: new Date(now.getTime() + this.options.sessionTtlSeconds * 1000),
       now,
-      tokenHash: hashToken(rawToken, this.options.sessionSecret),
+      tokenHash: await hashAdminToken(rawToken, this.options.sessionSecret),
     });
     return { admin: updated, rawToken, session };
   }
@@ -114,7 +106,7 @@ export class AdminService {
   ): Promise<{ admin: AdminAccountRow; session: AdminSessionRow }> {
     const now = this.now();
     const session = await this.repository.findAdminSessionByTokenHash(
-      hashToken(rawToken, this.options.sessionSecret),
+      await hashAdminToken(rawToken, this.options.sessionSecret),
     );
     if (!session || session.revoked_at || new Date(session.expires_at).getTime() <= now.getTime())
       throw new AppError(401, 'UNAUTHORIZED', 'Admin authentication is required');

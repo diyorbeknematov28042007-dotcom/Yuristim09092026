@@ -85,7 +85,7 @@ describe('D1 admin authentication persistence', () => {
     expect(firstFive.map((row) => row.failed_login_attempts).sort()).toEqual([1, 2, 3, 4, 5]);
     const locked = await repo.findAdminById(admin.id);
     expect(new Date(locked!.locked_until!).getTime()).toBeGreaterThan(Date.now());
-    await expect(repo.updateAdminLoginState(admin.id, update)).rejects.toThrow('D1 row missing');
+    expect((await repo.updateAdminLoginState(admin.id, update)).failed_login_attempts).toBe(5);
     await repo.logAdminLogin({
       adminId: admin.id,
       username: admin.username,

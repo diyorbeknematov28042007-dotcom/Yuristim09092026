@@ -89,21 +89,22 @@ export class D1AdminRepository implements AdminMethods {
     if (update.failed_login_attempts !== undefined && update.failed_login_attempts > 0) {
       if (!update.locked_until && update.failed_login_attempts >= 5)
         throw new Error('Missing admin lock expiry');
-      return required(
-        await this.db
-          .prepare(
-            `UPDATE admin_accounts SET failed_login_attempts=MIN(failed_login_attempts+1,5),
+      const changed = await this.db
+        .prepare(
+          `UPDATE admin_accounts SET failed_login_attempts=MIN(failed_login_attempts+1,5),
             locked_until=CASE WHEN failed_login_attempts>=4 THEN ? ELSE NULL END,
             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
             WHERE id=? AND status='active' AND (locked_until IS NULL OR locked_until<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
             RETURNING *`,
-          )
-          // The service sends the lock timestamp on its fifth observed failure.
-          // Earlier concurrent failures may cross the threshold first; calculate
-          // an equivalent expiry from the service's clock at the call site below.
-          .bind(update.locked_until ?? new Date(Date.now() + 15 * 60_000).toISOString(), id)
-          .first<AdminAccountRow>(),
-      );
+        )
+        // The service sends the lock timestamp on its fifth observed failure.
+        // Earlier concurrent failures may cross the threshold first; calculate
+        // an equivalent expiry from the service's clock at the call site below.
+        .bind(update.locked_until ?? new Date(Date.now() + 15 * 60_000).toISOString(), id)
+        .first<AdminAccountRow>();
+      // A parallel attempt after the threshold remains a login failure, not
+      // an unhandled database error returned to the client as HTTP 500.
+      return changed ?? required(await this.findAdminById(id));
     }
     if (update.failed_login_attempts !== 0 || !update.last_login_at || update.locked_until !== null)
       throw new Error('Unsupported admin login state update');
