@@ -6,6 +6,37 @@ ekotizimi. Repository database/core auth, multilingual Telegram Bot, lawyer
 verification, immutable credits/accept ledgers, marketplace va persistent Yuristim AI
 Gateway foundationini o‘z ichiga oladi.
 
+## Cloudflare migratsiya holati (draft PR #21)
+
+`migration/cloudflare-full-infrastructure` branch'i yangi API/Bot/D1 porti uchun ishchi
+branch. Joriy `main` arxitekturasi quyida tarixiy holati bilan berilgan;
+Cloudflare migratsiyasi hali ishlab chiqarish trafikiga ulanmagan. Batafsil
+audit, bajarilgan/qolgan ishlar va xavfsizlik gate'lari:
+[Cloudflare migration](docs/cloudflare-migration.md).
+
+- Alohida D1: `yuristim-v2-staging` (`5b79bbfe-c43f-41f6-9dd8-a36b5a700972`);
+  `cloudflare/d1/0001_*.sql`–`0016_*.sql` ketma-ket qo‘llangan.
+- Izolyatsiyalangan Worker:
+  `https://yuristim-v2-staging.diyorbeknematov28042007.workers.dev`.
+  `GET /health` va `GET /infra/ready` smoke test uchun;
+  biznes tayyorligini bildiruvchi `GET /ready` hamda qolgan yo‘llar 503.
+- Worker konfiguratsiyasi: `cloudflare/wrangler.staging.toml`. DB binding
+  `DB`; faqat ushbu yangi bazaga ulanadi. Mavjud Telegram webhook va domenlar
+  almashtirilmagan.
+- Mahalliy D1 invariant testlari: `pnpm test:d1`; Node/SQLite repository,
+  bot webhook testlari: `pnpm test`.
+- Frontend va Mini App manbalari bu branch'da ko‘chirilmaydi.
+
+Secretlarni faqat Cloudflare Secrets orqali bering. Workers Paid yoki R2
+subscriptionini roziliksiz yoqmang; R2 hozir accountda yoqilmagan. PIN uchun
+Workers Free 10 ms CPU chegarasida amaldagi Argon2id darajasini saqlash
+isbotlanmaguncha auth va production webhook yoqilmaydi.
+
+Rollback: production webhook/domen hozir eski hostingda; staging Worker
+subdomainini o‘chirish yoki uning oldingi versiyasini tiklash production
+trafikiga ta’sir qilmaydi. D1'ni rollbackda o‘chirmang; bu baza ajratilgan
+va hali faqat sxema/seed ma’lumotlarini saqlaydi.
+
 ## Arxitektura
 
 Yuristim **modular monolith first, microservices later** prinsipida quriladi. Web,

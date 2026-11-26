@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - 'phase/**'
+      - 'migration/**'
   pull_request:
     branches:
       - main
       - 'phase/**'
+      - 'migration/**'
 
 permissions:
   contents: read
@@ -76,3 +78,11 @@ jobs:
       - name: Stop isolated database
         if: always()
         run: supabase stop --no-backup
+
+  d1-schema:
+    name: D1 schema invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SQLite/D1 core auth rules
+        run: python3 -m unittest discover -s cloudflare/d1 -p 'test_*.py'

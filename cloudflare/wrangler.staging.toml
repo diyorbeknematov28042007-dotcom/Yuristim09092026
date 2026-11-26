@@ -1,0 +1,11 @@
+# Isolated infrastructure probe for Yuristim09092026. This Worker does not
+# handle Telegram updates or production API traffic.
+name = "yuristim-v2-staging"
+main = "worker/staging.js"
+compatibility_date = "2026-11-26"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yuristim-v2-staging"
+database_id = "5b79bbfe-c43f-41f6-9dd8-a36b5a700972"
