@@ -9,6 +9,8 @@ export * from './d1-marketplace-repository.js';
 export * from './d1-telegram-update-repository.js';
 export * from './d1-lawyer-review-repository.js';
 export * from './d1-lawyer-profile-repository.js';
+export * from './d1-lawyer-file-repository.js';
+export * from './d1-lawyer-repository.js';
 export * from './client.js';
 export * from './database.types.js';
 export * from './finance-repository.js';

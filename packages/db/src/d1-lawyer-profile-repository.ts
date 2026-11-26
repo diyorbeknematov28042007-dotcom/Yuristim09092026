@@ -39,17 +39,20 @@ type ProfileMethods = Pick<
   | 'cancelDraft'
 >;
 
-interface RawProfile extends Omit<LawyerProfileRow, 'consultation_price' | 'rating_average'> {
+export interface D1RawLawyerProfile extends Omit<
+  LawyerProfileRow,
+  'consultation_price' | 'rating_average'
+> {
   consultation_price_minor: number | null;
   rating_average_hundredths: number;
 }
-interface RawVerification extends Omit<LawyerVerificationRow, 'submitted_data'> {
+export interface D1RawLawyerVerification extends Omit<LawyerVerificationRow, 'submitted_data'> {
   submitted_data: string;
 }
 interface RawSpecialization extends Omit<SpecializationRow, 'active'> {
   active: number;
 }
-function profile(row: RawProfile): LawyerProfileRow {
+function profile(row: D1RawLawyerProfile): LawyerProfileRow {
   const { consultation_price_minor, rating_average_hundredths, ...rest } = row;
   return {
     ...rest,
@@ -57,7 +60,7 @@ function profile(row: RawProfile): LawyerProfileRow {
     rating_average: rating_average_hundredths / 100,
   };
 }
-function verification(row: RawVerification): LawyerVerificationRow {
+export function fromD1LawyerVerification(row: D1RawLawyerVerification): LawyerVerificationRow {
   return { ...row, submitted_data: JSON.parse(row.submitted_data) as Json };
 }
 function specialization(row: RawSpecialization): SpecializationRow {
@@ -76,31 +79,43 @@ function object(value: Json): string {
 export class D1LawyerProfileRepository implements ProfileMethods {
   constructor(private readonly db: D1LawyerProfileBinding) {}
 
-  private async hydrate(row: RawProfile | null): Promise<LawyerProfileRecord | null> {
-    if (!row) return null;
-    const [user, specs] = await Promise.all([
-      this.db.prepare('SELECT * FROM users WHERE id=?').bind(row.user_id).first<UserRow>(),
+  protected async hydrateMany(rows: D1RawLawyerProfile[]): Promise<LawyerProfileRecord[]> {
+    if (!rows.length) return [];
+    const userIds = [...new Set(rows.map((row) => row.user_id))];
+    const lawyerIds = rows.map((row) => row.id);
+    const [users, specs] = await Promise.all([
+      this.db
+        .prepare(`SELECT * FROM users WHERE id IN (${userIds.map(() => '?').join(',')})`)
+        .bind(...userIds)
+        .all<UserRow>(),
       this.db
         .prepare(
-          `SELECT s.* FROM specializations s JOIN lawyer_specializations ls
-          ON ls.specialization_id=s.id WHERE ls.lawyer_id=? ORDER BY s.code`,
+          `SELECT ls.lawyer_id,s.* FROM specializations s JOIN lawyer_specializations ls
+          ON ls.specialization_id=s.id WHERE ls.lawyer_id IN (${lawyerIds.map(() => '?').join(',')}) ORDER BY s.code`,
         )
-        .bind(row.id)
-        .all<RawSpecialization>(),
+        .bind(...lawyerIds)
+        .all<RawSpecialization & { lawyer_id: string }>(),
     ]);
-    return {
+    const byUser = new Map(users.results.map((user) => [user.id, user]));
+    const byLawyer = new Map<string, SpecializationRow[]>();
+    for (const item of specs.results) {
+      const { lawyer_id, ...row } = item;
+      const current = byLawyer.get(lawyer_id) ?? [];
+      current.push(specialization(row));
+      byLawyer.set(lawyer_id, current);
+    }
+    return rows.map((row) => ({
       profile: profile(row),
-      user: required(user),
-      specializations: specs.results.map(specialization),
-    };
+      user: required(byUser.get(row.user_id) ?? null),
+      specializations: byLawyer.get(row.id) ?? [],
+    }));
   }
   async findProfileByUserId(userId: string): Promise<LawyerProfileRecord | null> {
-    return this.hydrate(
-      await this.db
-        .prepare('SELECT * FROM lawyer_profiles WHERE user_id=?')
-        .bind(userId)
-        .first<RawProfile>(),
-    );
+    const row = await this.db
+      .prepare('SELECT * FROM lawyer_profiles WHERE user_id=?')
+      .bind(userId)
+      .first<D1RawLawyerProfile>();
+    return row ? (await this.hydrateMany([row]))[0]! : null;
   }
   async findRoutingProfileByUserId(userId: string): Promise<LawyerRoutingProfile | null> {
     const row = await this.db
@@ -110,14 +125,13 @@ export class D1LawyerProfileRepository implements ProfileMethods {
     return row ? { id: row.id, verificationStatus: row.verification_status } : null;
   }
   async findApprovedProfileByDuid(duid: string): Promise<LawyerProfileRecord | null> {
-    return this.hydrate(
-      await this.db
-        .prepare(
-          "SELECT * FROM lawyer_profiles WHERE public_slug=? AND verification_status='approved'",
-        )
-        .bind(duid)
-        .first<RawProfile>(),
-    );
+    const row = await this.db
+      .prepare(
+        "SELECT * FROM lawyer_profiles WHERE public_slug=? AND verification_status='approved'",
+      )
+      .bind(duid)
+      .first<D1RawLawyerProfile>();
+    return row ? (await this.hydrateMany([row]))[0]! : null;
   }
   async createProfile(userId: string, publicSlug: string): Promise<LawyerProfileRecord> {
     await this.db
@@ -192,17 +206,16 @@ export class D1LawyerProfileRepository implements ProfileMethods {
           ORDER BY ${sort} DESC,l.id LIMIT ? OFFSET ?`,
         )
         .bind(...params, input.limit, (input.page - 1) * input.limit)
-        .all<RawProfile>(),
+        .all<D1RawLawyerProfile>(),
     ]);
-    const items = await Promise.all(page.results.map((row) => this.hydrate(row)));
-    return { items: items.map(required), total: count?.total ?? 0 };
+    return { items: await this.hydrateMany(page.results), total: count?.total ?? 0 };
   }
   private async findVerification(
     sql: string,
     value: string,
   ): Promise<LawyerVerificationRow | null> {
-    const row = await this.db.prepare(sql).bind(value).first<RawVerification>();
-    return row ? verification(row) : null;
+    const row = await this.db.prepare(sql).bind(value).first<D1RawLawyerVerification>();
+    return row ? fromD1LawyerVerification(row) : null;
   }
   findLatestVerification(lawyerId: string): Promise<LawyerVerificationRow | null> {
     return this.findVerification(
@@ -239,8 +252,8 @@ export class D1LawyerProfileRepository implements ProfileMethods {
         object(input.submittedData),
         input.status === 'pending_review' ? input.now.toISOString() : null,
       )
-      .first<RawVerification>();
-    return verification(required(row));
+      .first<D1RawLawyerVerification>();
+    return fromD1LawyerVerification(required(row));
   }
   async updateDraft(id: string, submittedData: Json): Promise<LawyerVerificationRow> {
     const row = await this.db
@@ -248,8 +261,8 @@ export class D1LawyerProfileRepository implements ProfileMethods {
         "UPDATE lawyer_verifications SET submitted_data=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='draft' RETURNING *",
       )
       .bind(object(submittedData), id)
-      .first<RawVerification>();
-    return verification(required(row));
+      .first<D1RawLawyerVerification>();
+    return fromD1LawyerVerification(required(row));
   }
   async submitDraft(
     id: string,
@@ -261,8 +274,8 @@ export class D1LawyerProfileRepository implements ProfileMethods {
         "UPDATE lawyer_verifications SET status='pending_review',submitted_data=?,submitted_at=?,updated_at=? WHERE id=? AND status='draft' RETURNING *",
       )
       .bind(object(submittedData), now.toISOString(), now.toISOString(), id)
-      .first<RawVerification>();
-    return row ? verification(row) : null;
+      .first<D1RawLawyerVerification>();
+    return row ? fromD1LawyerVerification(row) : null;
   }
   async cancelDraft(id: string): Promise<void> {
     await this.db
