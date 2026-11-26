@@ -74,6 +74,33 @@ class CoreAuthSchemaTests(unittest.TestCase):
                 ("tag-2", "user-1", "Bad tag"),
             )
 
+    def test_login_challenge_is_single_use_and_expires(self):
+        now = "2026-11-26T12:00:00.000Z"
+        self.db.execute(
+            "INSERT INTO auth_login_requests(id,challenge_hash,created_at,expires_at) VALUES(?,?,?,?)",
+            ("login-1", "b" * 64, now, "2026-11-26T12:10:00.000Z"),
+        )
+        confirm = (
+            "UPDATE auth_login_requests SET status='confirmed',confirmed_at=?,user_id=? "
+            "WHERE id=? AND challenge_hash=? AND status='pending' AND expires_at>? RETURNING id"
+        )
+        consume = (
+            "UPDATE auth_login_requests SET status='consumed',consumed_at=? "
+            "WHERE id=? AND challenge_hash=? AND status='confirmed' AND expires_at>? RETURNING id"
+        )
+        self.assertEqual(len(self.db.execute(confirm, (now, "user-1", "login-1", "b" * 64, now)).fetchall()), 1)
+        self.assertEqual(len(self.db.execute(confirm, (now, "user-1", "login-1", "b" * 64, now)).fetchall()), 0)
+        self.assertEqual(len(self.db.execute(consume, (now, "login-1", "b" * 64, now)).fetchall()), 1)
+        self.assertEqual(len(self.db.execute(consume, (now, "login-1", "b" * 64, now)).fetchall()), 0)
+        self.db.execute(
+            "INSERT INTO auth_login_requests(id,challenge_hash,created_at,expires_at) VALUES(?,?,?,?)",
+            ("login-2", "c" * 64, now, "2026-11-26T12:10:00.000Z"),
+        )
+        self.assertEqual(
+            len(self.db.execute(confirm, (now, "user-1", "login-2", "c" * 64, "2026-11-26T12:11:00.000Z")).fetchall()),
+            0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

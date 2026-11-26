@@ -27,6 +27,7 @@ Bu hujjat yangi repositoryga tegishli. `Yuristimbot07082026` Worker/D1 resurslar
 
 - Cloudflare accountdagi eski `yuristim-staging` va `yuristim-production` D1 bazalariga tegilmadi.
 - Yangi `yuristim-v2-staging` D1 (`5b79bbfe-c43f-41f6-9dd8-a36b5a700972`) alohida yaratildi. `cloudflare/d1/0001_core_auth.sql` va mavjud bazaga identifier cheklovini to‘ldiruvchi `0002_identifier_guards.sql` qo‘llandi: `users`, `auth_sessions`, `auth_login_requests`, `user_tags`, indekslar va triggerlar. Local SQLite constraint testlari o‘tdi; remote D1 to‘rtta jadval mavjudligini tasdiqladi. Yangi bazada 0001 va 0002 tartibda qo‘llanadi.
+- `packages/db/src/d1-core-repository.ts` asosiy auth repository contractini D1 prepared SQL bilan ifodalaydi; login challenge `UPDATE ... WHERE status ... AND expires_at > now RETURNING` bir martalik ishlash uchun atomik. Repository API runtime’ga ulanmagan: avval lawyer va finance sxema/triggerlari hamda welcome credit invariantini ko‘chirish shart.
 - Bu **to‘liq schema emas**. API/Bot/Web hali yangi D1’ga ulanmagan va yangi Worker/Pages deploy qilinmagan. Eski staging bot yoki production domenlari almashtirilmagan. Qolgan jadvallar/RPC va barcha xavfsizlik qoidalari ko‘chmaguncha endpointni jonli trafik uchun yoqmaslik kerak.
 
 ## Ish tartibi va gate'lar
