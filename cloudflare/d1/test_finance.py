@@ -33,7 +33,7 @@ class FinanceSchemaTests(unittest.TestCase):
             self.db.execute("INSERT INTO credit_transactions(id,user_id,type,bucket_type,amount_milli,balance_after_milli,source,reference_id,created_at) VALUES ('repeat','u','welcome_bonus','bonus',50000,100000,'onboarding','welcome:v1',?)", (NOW,))
 
     def test_milli_precision_and_no_overdraft(self):
-        self.db.execute("INSERT INTO credit_transactions(id,user_id,type,bucket_type,amount_milli,balance_after_milli,source,reference_id,created_at) VALUES ('fraction','u','admin_bonus','bonus',1,50001,'admin','fraction',?)", (NOW,))
+        self.db.execute("INSERT INTO credit_transactions(id,user_id,type,bucket_type,amount_milli,balance_after_milli,source,reference_id,created_at) VALUES ('fraction','u','student_bonus','bonus',1,50001,'student','fraction',?)", (NOW,))
         self.db.execute("INSERT INTO credit_transactions(id,user_id,type,bucket_type,amount_milli,balance_after_milli,source,reference_id,created_at) VALUES ('debit','u','ai_usage','bonus',-50001,0,'ai','one',?)", (NOW,))
         self.assertEqual(self.balance(), 0)
         with self.assertRaises(sqlite3.IntegrityError):
