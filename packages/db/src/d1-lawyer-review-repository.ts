@@ -103,7 +103,7 @@ export class D1LawyerReviewRepository {
     )
       invalid();
     const admin = await this.db
-      .prepare("SELECT id FROM admin_accounts WHERE id=? AND status='active'")
+      .prepare("SELECT id FROM admin_accounts WHERE id=? AND role='admin' AND status='active'")
       .bind(input.adminId)
       .first<{ id: string }>();
     if (!admin) throw new Error('Admin access denied');
@@ -133,7 +133,7 @@ export class D1LawyerReviewRepository {
         .prepare(
           `UPDATE lawyer_verifications SET status=?,reject_reason=?,reviewed_by=?,
         reviewed_at=?,review_claim_id=?,updated_at=? WHERE id=? AND status IN ('submitted','pending_review')
-        AND EXISTS(SELECT 1 FROM admin_accounts WHERE id=? AND status='active') RETURNING id`,
+        AND EXISTS(SELECT 1 FROM admin_accounts WHERE id=? AND role='admin' AND status='active') RETURNING id`,
         )
         .bind(
           input.decision,

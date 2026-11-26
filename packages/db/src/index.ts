@@ -1,6 +1,7 @@
 export * from './ai-repository.js';
 export * from './d1-ai-provider-repository.js';
 export * from './d1-ai-repository.js';
+export * from './d1-admin-repository.js';
 export * from './d1-core-repository.js';
 export * from './d1-finance-repository.js';
 export * from './d1-founding100-repository.js';

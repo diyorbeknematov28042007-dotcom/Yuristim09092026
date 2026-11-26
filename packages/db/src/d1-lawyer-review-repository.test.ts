@@ -78,6 +78,7 @@ describe('D1 lawyer review atomicity', () => {
       '0014_ai_message_immutable.sql',
       '0015_telegram_updates.sql',
       '0016_lawyer_review_claim.sql',
+      '0017_lawyer_review_admin_role.sql',
     ])
       db.exec(readFileSync(new URL(`../../../cloudflare/d1/${name}`, import.meta.url), 'utf8'));
     db.prepare(
@@ -154,6 +155,21 @@ describe('D1 lawyer review atomicity', () => {
     await expect(repo.reviewVerification({ ...input, adminId: 'absent' })).rejects.toThrow(
       'Admin access denied',
     );
+    expect(db.prepare("SELECT status FROM lawyer_verifications WHERE id='v'").get()).toEqual({
+      status: 'pending_review',
+    });
+  });
+  it('does not let a support account review a lawyer', async () => {
+    db.prepare("UPDATE admin_accounts SET role='support' WHERE id='a'").run();
+    await expect(repo.reviewVerification(input)).rejects.toThrow('Admin access denied');
+    expect(() =>
+      db
+        .prepare(
+          `UPDATE lawyer_verifications SET status='approved',reviewed_by='a',
+        reviewed_at=?,review_claim_id=? WHERE id='v'`,
+        )
+        .run(NOW.toISOString(), crypto.randomUUID()),
+    ).toThrow('invalid lawyer review transition');
     expect(db.prepare("SELECT status FROM lawyer_verifications WHERE id='v'").get()).toEqual({
       status: 'pending_review',
     });
