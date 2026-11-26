@@ -59,6 +59,11 @@ class MarketplaceSchemaTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("INSERT INTO marketplace_reviews(id,marketplace_post_id,user_id,lawyer_id,rating) VALUES('r','p','lawyer2','l1',5)")
 
+    def test_cancelling_closes_outstanding_acceptance(self):
+        self.accept('a', 'l1', 'usage-1')
+        self.db.execute("UPDATE marketplace_posts SET status='cancelled',cancelled_at=? WHERE id='p'", (NOW,))
+        self.assertEqual(self.db.execute("SELECT status FROM marketplace_acceptances WHERE id='a'").fetchone()[0], 'cancelled')
+
 
 if __name__ == '__main__':
     unittest.main()
