@@ -36,6 +36,9 @@ class Founding100SchemaTests(unittest.TestCase):
         self.db.execute("UPDATE founding100_reservations SET status='confirmed',user_id='u',confirmed_at=? WHERE id='1'", (NOW,))
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("UPDATE founding100_reservations SET status='confirmed',user_id='u',confirmed_at=? WHERE id='2'", (NOW,))
+        events = self.db.execute("SELECT event_name FROM founding100_events WHERE reservation_id='1' ORDER BY event_name").fetchall()
+        self.assertEqual(events, [('beta_confirmed',), ('telegram_start',)])
+        self.assertEqual(self.db.execute("SELECT count(*) FROM founding100_events WHERE reservation_id='2'").fetchone()[0], 0)
 
     def test_public_ingress_only_persists_deduplicated_events(self):
         args=('beta_page_view', 'direct', 'a'*64, '00000000-0000-4000-8000-000000000001')
