@@ -18,7 +18,8 @@ audit, bajarilgan/qolgan ishlar va xavfsizlik gate'lari:
   `cloudflare/d1/0001_*.sql`–`0016_*.sql` ketma-ket qo‘llangan.
 - Izolyatsiyalangan Worker:
   `https://yuristim-v2-staging.diyorbeknematov28042007.workers.dev`.
-  `GET /health` va `GET /ready` test uchun; qolgan yo‘llar 503.
+  `GET /health` va `GET /infra/ready` smoke test uchun;
+  biznes tayyorligini bildiruvchi `GET /ready` hamda qolgan yo‘llar 503.
 - Worker konfiguratsiyasi: `cloudflare/wrangler.staging.toml`. DB binding
   `DB`; faqat ushbu yangi bazaga ulanadi. Mavjud Telegram webhook va domenlar
   almashtirilmagan.

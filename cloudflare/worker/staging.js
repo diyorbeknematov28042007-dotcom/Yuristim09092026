@@ -7,6 +7,9 @@ export default {
       return Response.json({ status: 'up', service: 'yuristim-v2-staging', apiReady: false });
     }
     if (request.method === 'GET' && path === '/ready') {
+      return Response.json({ status: 'migration_incomplete', apiReady: false }, { status: 503 });
+    }
+    if (request.method === 'GET' && path === '/infra/ready') {
       try {
         const row = await env.DB.prepare(
           "SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('users','ai_messages','credit_transactions','telegram_update_claims')",
